@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { BuildingType, PlacedBuilding } from '../types/game';
+import { BuildingType, PlacedBuilding, RoadNode } from '../types/game';
 import { BUILDING_DEFS } from '../data/buildingDefs';
 import { TerrainGenerator } from './TerrainGenerator';
 import { VegetationSystem } from './VegetationSystem';
+import { RoadSystem } from './RoadSystem';
 import { soundManager } from '../audio/SoundManager';
 
 export class PlacementSystem {
@@ -13,8 +14,16 @@ export class PlacementSystem {
   public isValid: boolean = false;
   public gridPos: { x: number; z: number; y: number } = { x: 0, z: 0, y: 0 };
 
+  // Two-Point Interactive Road Placement
+  public roadStartNode: RoadNode | null = null;
+  public snappedNode: RoadNode | null = null;
+  public snapIndicator: THREE.Mesh;
+  public roadPreviewGroup: THREE.Group;
+  public roadCostEstimate: number = 0;
+
   private terrain: TerrainGenerator;
   private vegetation: VegetationSystem;
+  private roadSystem?: RoadSystem;
   private validMat: THREE.MeshBasicMaterial;
   private invalidMat: THREE.MeshBasicMaterial;
 
@@ -22,6 +31,8 @@ export class PlacementSystem {
     this.terrain = terrain;
     this.vegetation = vegetation;
     this.group = new THREE.Group();
+    this.roadPreviewGroup = new THREE.Group();
+    this.group.add(this.roadPreviewGroup);
 
     this.validMat = new THREE.MeshBasicMaterial({
       color: 0x10b981,
@@ -36,16 +47,41 @@ export class PlacementSystem {
       opacity: 0.55,
       wireframe: false,
     });
+
+    // Snapping indicator ring (Cyan glowing target)
+    const ringGeo = new THREE.RingGeometry(1.8, 2.5, 32);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x06b6d4,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+    });
+    this.snapIndicator = new THREE.Mesh(ringGeo, ringMat);
+    this.snapIndicator.visible = false;
+    this.group.add(this.snapIndicator);
+  }
+
+  public setRoadSystem(roads: RoadSystem) {
+    this.roadSystem = roads;
   }
 
   public selectBuilding(type: BuildingType | null) {
     this.activeBuildingType = type;
+    this.cancelRoadDrawing();
+
     if (this.cursorMesh) {
       this.group.remove(this.cursorMesh);
       this.cursorMesh = null;
     }
+    this.snapIndicator.visible = false;
 
     if (!type) return;
+
+    if (type.startsWith('road_')) {
+      // Roads use the two-point road preview
+      return;
+    }
 
     const def = BUILDING_DEFS[type];
     const w = def.width * 4;
@@ -77,17 +113,37 @@ export class PlacementSystem {
     }
   }
 
+  public cancelRoadDrawing() {
+    this.roadStartNode = null;
+    this.snappedNode = null;
+    this.snapIndicator.visible = false;
+    this.roadCostEstimate = 0;
+    while (this.roadPreviewGroup.children.length > 0) {
+      this.roadPreviewGroup.remove(this.roadPreviewGroup.children[0]);
+    }
+  }
+
   public updateCursor(
     intersectionPoint: THREE.Vector3 | null,
     existingBuildings: PlacedBuilding[],
     playerCash: number
   ) {
-    if (!this.cursorMesh || !this.activeBuildingType || !intersectionPoint) {
+    if (!intersectionPoint || !this.activeBuildingType) {
       if (this.cursorMesh) this.cursorMesh.visible = false;
+      this.snapIndicator.visible = false;
       return;
     }
 
+    // 1. ROAD PLACEMENT WORKFLOW
+    if (this.activeBuildingType.startsWith('road_')) {
+      this.updateRoadCursor(intersectionPoint, playerCash);
+      return;
+    }
+
+    // 2. STANDARD BUILDING PLACEMENT
+    if (!this.cursorMesh) return;
     this.cursorMesh.visible = true;
+    this.snapIndicator.visible = false;
 
     // Snap to 4-unit grid
     const gridSize = 4;
@@ -106,23 +162,19 @@ export class PlacementSystem {
     // Check validity
     let valid = true;
 
-    // 1. Cost check
-    if (playerCash < def.cost) {
-      valid = false;
-    }
+    // Cost check
+    if (playerCash < def.cost) valid = false;
 
-    // 2. Terrain check: Naval dock can ONLY be on shoreline/water. Others must be on dry land
+    // Terrain check
     const isWater = this.terrain.isWater(snapX, snapZ);
     if (this.activeBuildingType === 'mil_naval_dock') {
       const nearShore = this.terrain.isNearShoreline(snapX, snapZ);
       if (!nearShore) valid = false;
-    } else if (this.activeBuildingType === 'road_bridge') {
-      // Bridges can cross water
     } else {
       if (isWater) valid = false;
     }
 
-    // 3. Collision check with existing buildings
+    // Collision check with existing buildings
     const halfW = w / 2;
     const halfD = d / 2;
     for (const b of existingBuildings) {
@@ -140,12 +192,79 @@ export class PlacementSystem {
 
     this.isValid = valid;
 
-    // Apply color to cursor
     this.cursorMesh.traverse((child) => {
       if (child instanceof THREE.Mesh && child.geometry instanceof THREE.BoxGeometry) {
         child.material = valid ? this.validMat : this.invalidMat;
       }
     });
+  }
+
+  private updateRoadCursor(point: THREE.Vector3, playerCash: number) {
+    if (!this.roadSystem) return;
+
+    // Check for magnetic endpoint snapping
+    const snap = this.roadSystem.findSnapNode(point.x, point.z, 7.5);
+    this.snappedNode = snap;
+
+    let targetX = snap ? snap.x : Math.round(point.x / 4) * 4;
+    let targetZ = snap ? snap.z : Math.round(point.z / 4) * 4;
+    let targetY = snap ? snap.elevation : this.terrain.getHeight(targetX, targetZ);
+
+    this.gridPos = { x: targetX, z: targetZ, y: targetY };
+
+    // Update snap indicator
+    if (snap) {
+      this.snapIndicator.visible = true;
+      this.snapIndicator.position.set(snap.x, snap.elevation + 0.12, snap.z);
+    } else {
+      this.snapIndicator.visible = false;
+    }
+
+    // If start node is selected, render dynamic continuous road preview
+    while (this.roadPreviewGroup.children.length > 0) {
+      this.roadPreviewGroup.remove(this.roadPreviewGroup.children[0]);
+    }
+
+    if (this.roadStartNode) {
+      const sx = this.roadStartNode.x;
+      const sz = this.roadStartNode.z;
+      const sy = this.roadStartNode.elevation;
+
+      const dx = targetX - sx;
+      const dz = targetZ - sz;
+      const length = Math.hypot(dx, dz);
+
+      if (length > 2.0) {
+        this.roadCostEstimate = Math.max(50, Math.round((length / 10) * 50));
+        this.isValid = playerCash >= this.roadCostEstimate;
+
+        const width = this.activeBuildingType === 'road_highway' ? 5.2 : 3.6;
+        const angle = Math.atan2(dx, dz);
+
+        const previewGeo = new THREE.BoxGeometry(width, 0.18, length);
+        const previewMat = this.isValid ? this.validMat : this.invalidMat;
+        const previewMesh = new THREE.Mesh(previewGeo, previewMat);
+
+        const midX = (sx + targetX) / 2;
+        const midZ = (sz + targetZ) / 2;
+        const midY = (sy + targetY) / 2 + 0.08;
+
+        previewMesh.position.set(midX, midY, midZ);
+        previewMesh.rotation.y = angle;
+
+        const dy = targetY - sy;
+        previewMesh.rotation.x = Math.atan2(dy, length);
+
+        this.roadPreviewGroup.add(previewMesh);
+      } else {
+        this.isValid = false;
+        this.roadCostEstimate = 0;
+      }
+    } else {
+      // Just hovering before picking start node
+      this.isValid = true;
+      this.roadCostEstimate = 50;
+    }
   }
 
   public placeBuilding(): PlacedBuilding | null {

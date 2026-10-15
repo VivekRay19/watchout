@@ -9,6 +9,7 @@ import { BuildingInspector } from './ui/BuildingInspector';
 import { MilitaryPanel } from './ui/MilitaryPanel';
 import { ResearchModal } from './ui/ResearchModal';
 import { SettingsModal } from './ui/SettingsModal';
+import { TutorialCard } from './ui/TutorialCard';
 import { HelpCircle, X } from 'lucide-react';
 import { soundManager } from './audio/SoundManager';
 
@@ -23,7 +24,7 @@ export const App: React.FC = () => {
   const [showMilitary, setShowMilitary] = useState(false);
   const [showResearch, setShowResearch] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showHelp, setShowHelp] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -61,8 +62,14 @@ export const App: React.FC = () => {
             onOpenSettings={() => setShowSettings(true)}
           />
 
+          {/* Guided Onboarding Tutorial Card (Step-by-step progressive disclosure) */}
+          <TutorialCard engine={engine} onOpenMilitary={() => setShowMilitary(true)} />
+
           {/* Incoming Threat Warning Banner */}
-          <ThreatAlertBanner threats={engine.threatSystem.activeThreats} />
+          <ThreatAlertBanner
+            threats={engine.threatSystem.activeThreats}
+            onFocusThreat={(threat) => engine.world.focusOn(threat.x, threat.z, 35)}
+          />
 
           {/* Strategic Radar Minimap */}
           <StrategicMinimap engine={engine} />

@@ -105,6 +105,8 @@ export class GameEngine {
     this.world.scene.add(this.enemyFaction.group);
     this.world.scene.add(this.placement.group);
 
+    this.placement.setRoadSystem(this.roadSystem);
+
     this.initEventListeners();
     this.loadOrSetupStarterCity();
     this.startLoop();
@@ -131,6 +133,17 @@ export class GameEngine {
       this.handleBuildingClick();
     });
 
+    this.canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (this.placement.roadStartNode) {
+        this.placement.cancelRoadDrawing();
+        this.log('INFO', 'Road drawing chain finished.');
+      } else if (this.placement.activeBuildingType) {
+        this.placement.selectBuilding(null);
+      }
+      this.onStateUpdate?.();
+    });
+
     window.addEventListener('keydown', (e) => {
       if (e.key === 'r' || e.key === 'R') {
         if (this.placement.activeBuildingType) {
@@ -138,8 +151,12 @@ export class GameEngine {
         }
       }
       if (e.key === 'Escape') {
-        this.placement.selectBuilding(null);
-        this.selectedBuilding = null;
+        if (this.placement.roadStartNode) {
+          this.placement.cancelRoadDrawing();
+        } else {
+          this.placement.selectBuilding(null);
+          this.selectedBuilding = null;
+        }
         this.onStateUpdate?.();
       }
     });
@@ -196,6 +213,7 @@ export class GameEngine {
       { type: 'com_retail', x: 12, z: -12 },
       { type: 'util_solar', x: -12, z: -12 },
       { type: 'def_radar', x: -28, z: -28 },
+      { type: 'def_sam_battery', x: -20, z: -20 },
     ];
 
     starterList.forEach((item) => {
@@ -252,33 +270,52 @@ export class GameEngine {
   }
 
   private handleRoadPlacement() {
-    const point = this.world.getTerrainIntersection();
-    if (!point) return;
+    if (!this.placement.activeBuildingType || !this.placement.activeBuildingType.startsWith('road_')) return;
+    const roadType = this.placement.activeBuildingType as any;
 
-    const snapX = Math.round(point.x / 4) * 4;
-    const snapZ = Math.round(point.z / 4) * 4;
-
-    const node = this.roadSystem.addNode(snapX, snapZ);
-    // Connect to closest existing node within 28 units
-    let closestNode: RoadNode | null = null;
-    let minDist = 32;
-
-    this.roadSystem.nodes.forEach((n) => {
-      if (n.id === node.id) return;
-      const d = Math.hypot(n.x - node.x, n.z - node.z);
-      if (d < minDist) {
-        minDist = d;
-        closestNode = n;
+    // Step 1: Anchor start node
+    if (!this.placement.roadStartNode) {
+      if (this.placement.snappedNode) {
+        this.placement.roadStartNode = this.placement.snappedNode;
+      } else {
+        const startNode = this.roadSystem.addNode(this.placement.gridPos.x, this.placement.gridPos.z);
+        this.placement.roadStartNode = startNode;
       }
-    });
-
-    if (closestNode) {
-      if (this.economy.deductFunds(50)) {
-        this.roadSystem.addSegment(closestNode, node, 'road_two_lane');
-        this.vegetation.clearVegetationAround(snapX, snapZ, 6);
-        soundManager.playPlace();
-      }
+      soundManager.playClick();
+      this.log('INFO', 'Road anchor established. Click destination point to construct road segment.');
+      this.onStateUpdate?.();
+      return;
     }
+
+    // Step 2: Connect to destination node
+    const startNode = this.placement.roadStartNode;
+    let endNode: RoadNode;
+
+    if (this.placement.snappedNode) {
+      if (this.placement.snappedNode.id === startNode.id) return; // Cannot connect to self
+      endNode = this.placement.snappedNode;
+    } else {
+      endNode = this.roadSystem.addNode(this.placement.gridPos.x, this.placement.gridPos.z);
+    }
+
+    const dist = Math.hypot(endNode.x - startNode.x, endNode.z - startNode.z);
+    if (dist < 2.0) return; // Prevent zero-length road segments
+
+    const cost = this.placement.roadCostEstimate || 50;
+    if (!this.economy.deductFunds(cost)) {
+      this.log('WARNING', `Insufficient Treasury! Road construction requires $${cost.toLocaleString()}`);
+      return;
+    }
+
+    this.roadSystem.addSegment(startNode, endNode, roadType);
+    this.vegetation.clearVegetationAround((startNode.x + endNode.x) / 2, (startNode.z + endNode.z) / 2, dist / 2 + 3);
+    this.vegetation.clearVegetationAround(endNode.x, endNode.z, 6);
+    soundManager.playPlace();
+    this.log('SUCCESS', `Constructed ${roadType === 'road_highway' ? 'Highway' : 'Avenue'} segment ($${cost}).`);
+
+    // Chain continuation: next road segment starts from this end node
+    this.placement.roadStartNode = endNode;
+    this.onStateUpdate?.();
   }
 
   private handleBuildingClick() {
@@ -420,6 +457,7 @@ export class GameEngine {
           this.buildings,
           this.threatSystem.activeThreats,
           timestamp,
+          simDelta,
           (logEntry) => this.log(logEntry.type, logEntry.message)
         );
         this.defenseSystem.update(

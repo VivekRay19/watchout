@@ -9,8 +9,8 @@ export class ThreatSystem {
   private threatMeshes: Map<string, THREE.Group> = new Map();
   private particles: ParticleSystem;
   private lastSpawnTime = 0;
-  private spawnInterval = 35000; // spawn enemy incursion every ~35s
-  private enemyBasePos = { x: -220, z: -200 };
+  private spawnInterval = 38000; // spawn enemy incursion every ~38s
+  private enemyBasePos = { x: -210, z: -200 };
 
   constructor(particles: ParticleSystem) {
     this.particles = particles;
@@ -25,11 +25,10 @@ export class ThreatSystem {
     onBuildingDamaged: (buildingId: string, damage: number) => void,
     onLog: (entry: CombatLogEntry) => void
   ) {
-    // Dynamic spawn interval based on threat level
     let interval = this.spawnInterval;
-    if (threatLevel === 'ELEVATED') interval = 28000;
-    if (threatLevel === 'HIGH') interval = 20000;
-    if (threatLevel === 'CRITICAL') interval = 14000;
+    if (threatLevel === 'ELEVATED') interval = 30000;
+    if (threatLevel === 'HIGH') interval = 22000;
+    if (threatLevel === 'CRITICAL') interval = 16000;
 
     if (now - this.lastSpawnTime > interval) {
       this.lastSpawnTime = now;
@@ -41,18 +40,24 @@ export class ThreatSystem {
       const t = this.activeThreats[i];
       const mesh = this.threatMeshes.get(t.id);
 
+      if (t.state === 'INTERCEPTED') {
+        this.removeThreat(t.id);
+        continue;
+      }
+
       const dx = t.targetX - t.x;
       const dz = t.targetZ - t.z;
       const dist = Math.hypot(dx, dz);
 
       if (dist < 4.0 || t.y <= 0) {
-        // Threat reached target or crashed - IMPACT!
-        this.particles.spawnExplosion(t.x, t.y, t.z, 75);
+        // Threat reached target - IMPACT!
+        t.state = 'IMPACTED';
+        this.particles.spawnExplosion(t.x, Math.max(1, t.y), t.z, 85);
         soundManager.playExplosion();
         soundManager.playSiren();
 
         if (t.targetBuildingId) {
-          const damage = t.type === 'cruise_missile' ? 350 : 180;
+          const damage = t.type === 'cruise_missile' ? 380 : 200;
           onBuildingDamaged(t.targetBuildingId, damage);
         }
 
@@ -75,31 +80,86 @@ export class ThreatSystem {
       t.z += Math.cos(angle) * step;
 
       // Glide down slightly towards target elevation
-      t.y = Math.max(2.0, t.y - delta * 1.5);
+      t.y = Math.max(2.5, t.y - delta * 1.2);
 
       if (mesh) {
         mesh.position.set(t.x, t.y, t.z);
         mesh.rotation.y = angle;
       }
 
-      // Engine trail
+      // Engine smoke/fire trail
       this.particles.spawnSmokePuff(t.x, t.y, t.z, 0xef4444);
     }
   }
 
+  // Scripted training encounter for Step 6 of the onboarding tutorial
+  public spawnScriptedTrainingThreat(buildings: PlacedBuilding[], onLog: (entry: CombatLogEntry) => void): Threat {
+    let targetX = 0;
+    let targetZ = 0;
+    let targetBuildingId: string | undefined;
+
+    if (buildings.length > 0) {
+      const b = buildings[0];
+      targetX = b.x;
+      targetZ = b.z;
+      targetBuildingId = b.id;
+    }
+
+    const threatId = `threat_tutorial_${Date.now()}`;
+    const originX = -110;
+    const originZ = -100;
+    const altitude = 14;
+
+    const threat: Threat = {
+      id: threatId,
+      name: 'Training Drone (Target Drone)',
+      type: 'drone_recon',
+      x: originX,
+      y: altitude,
+      z: originZ,
+      targetX,
+      targetZ,
+      targetBuildingId,
+      speed: 12, // Slow, predictable target for tutorial demonstration
+      health: 100,
+      maxHealth: 100,
+      detected: false,
+      state: 'UNDETECTED',
+      altitude,
+      heading: Math.atan2(targetX - originX, targetZ - originZ),
+      interceptorsInFlight: 0,
+    };
+
+    const mesh = this.createThreatMesh('drone_recon');
+    mesh.position.set(threat.x, threat.y, threat.z);
+    mesh.rotation.y = threat.heading;
+
+    this.group.add(mesh);
+    this.threatMeshes.set(threatId, mesh);
+    this.activeThreats.push(threat);
+
+    onLog({
+      id: `log_${Date.now()}_${Math.random()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: 'ALERT',
+      message: `TRAINING EXERCISE: Simulated hostile recon drone inbound from Sector West. Observe radar detection & SAM interception!`,
+    });
+
+    return threat;
+  }
+
   private spawnThreatWave(buildings: PlacedBuilding[], onLog: (entry: CombatLogEntry) => void) {
-    // Pick an enemy attack type
     const roll = Math.random();
     let type: Threat['type'] = 'drone_recon';
-    let speed = 14;
+    let speed = 15;
     let altitude = 16;
     let name = 'Hostile Shahed Recon Drone';
 
-    if (roll > 0.4 && roll <= 0.8) {
+    if (roll > 0.45 && roll <= 0.8) {
       type = 'cruise_missile';
-      speed = 32;
+      speed = 34;
       altitude = 8;
-      name = 'Kalibr Stealth Cruise Missile';
+      name = 'Kalibr Low-Altitude Cruise Missile';
     } else if (roll > 0.8) {
       type = 'stealth_bomber';
       speed = 22;
@@ -107,13 +167,11 @@ export class ThreatSystem {
       name = 'Tu-160 Heavy Strike Incursion';
     }
 
-    // Pick a high-value player target building or city center
     let targetX = 0;
     let targetZ = 0;
     let targetBuildingId: string | undefined;
 
     if (buildings.length > 0) {
-      // Prioritize power plants, factories, or military HQ
       const highValue = buildings.find(
         (b) => b.type === 'util_power_plant' || b.type === 'mil_hq' || b.type === 'ind_factory'
       );
@@ -123,11 +181,10 @@ export class ThreatSystem {
       targetBuildingId = targetBuilding.id;
     }
 
-    const threatId = `threat_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const threatId = `threat_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
-    // Spawn origin near enemy territory perimeter (-220, -200)
-    const originX = this.enemyBasePos.x + (Math.random() - 0.5) * 40;
-    const originZ = this.enemyBasePos.z + (Math.random() - 0.5) * 40;
+    const originX = this.enemyBasePos.x + (Math.random() - 0.5) * 45;
+    const originZ = this.enemyBasePos.z + (Math.random() - 0.5) * 45;
 
     const threat: Threat = {
       id: threatId,
@@ -143,8 +200,10 @@ export class ThreatSystem {
       health: 100,
       maxHealth: 100,
       detected: false,
+      state: 'UNDETECTED',
       altitude,
       heading: Math.atan2(targetX - originX, targetZ - originZ),
+      interceptorsInFlight: 0,
     };
 
     const mesh = this.createThreatMesh(type);
@@ -159,7 +218,7 @@ export class ThreatSystem {
       id: `log_${Date.now()}_${Math.random()}`,
       timestamp: new Date().toLocaleTimeString(),
       type: 'WARNING',
-      message: `INTRUSION ALERT: Unknown aerial contact launched from Sector Charlie toward City Zone!`,
+      message: `INTRUSION ALERT: Unknown hostile contact launched from Sector Charlie!`,
     });
   }
 
@@ -167,44 +226,62 @@ export class ThreatSystem {
     const group = new THREE.Group();
 
     if (type === 'cruise_missile') {
+      // Cylindrical cruise missile body
       const body = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.2, 0.2, 3.2, 8),
-        new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.4 })
+        new THREE.CylinderGeometry(0.24, 0.24, 3.8, 10),
+        new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.35, metalness: 0.6 })
       );
       body.rotateX(Math.PI / 2);
       group.add(body);
 
-      // Cruise missile stubby wings
+      // Folding wings
       const wings = new THREE.Mesh(
-        new THREE.BoxGeometry(2.4, 0.05, 0.6),
-        new THREE.MeshStandardMaterial({ color: 0x374151 })
+        new THREE.BoxGeometry(2.8, 0.06, 0.7),
+        new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.5 })
       );
       group.add(wings);
 
-      // Red warhead tip
+      // Warhead radome
       const tip = new THREE.Mesh(
-        new THREE.ConeGeometry(0.2, 0.8, 8),
+        new THREE.ConeGeometry(0.24, 0.9, 10),
         new THREE.MeshBasicMaterial({ color: 0xef4444 })
       );
       tip.rotateX(-Math.PI / 2);
-      tip.position.z = 2.0;
+      tip.position.z = 2.35;
       group.add(tip);
+
+      // Rocket engine glow
+      const flame = new THREE.Mesh(
+        new THREE.ConeGeometry(0.18, 0.8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xf97316 })
+      );
+      flame.rotateX(Math.PI / 2);
+      flame.position.z = -2.3;
+      group.add(flame);
     } else {
       // Delta-wing stealth drone
-      const deltaGeo = new THREE.ConeGeometry(1.6, 3.2, 3);
+      const deltaGeo = new THREE.ConeGeometry(1.8, 3.6, 3);
       deltaGeo.rotateX(Math.PI / 2);
-      const deltaMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.3 });
+      const deltaMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.4, metalness: 0.5 });
       const drone = new THREE.Mesh(deltaGeo, deltaMat);
-      drone.scale.set(1.4, 0.25, 1.0);
+      drone.scale.set(1.5, 0.28, 1.0);
       group.add(drone);
 
       // Glowing red sensor eye
       const eye = new THREE.Mesh(
-        new THREE.SphereGeometry(0.18, 6, 6),
+        new THREE.SphereGeometry(0.2, 8, 8),
         new THREE.MeshBasicMaterial({ color: 0xff0000 })
       );
-      eye.position.set(0, 0.15, 1.2);
+      eye.position.set(0, 0.16, 1.4);
       group.add(eye);
+
+      // Pusher propeller engine
+      const prop = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 0.08, 0.04),
+        new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+      );
+      prop.position.set(0, 0, -1.8);
+      group.add(prop);
     }
 
     return group;

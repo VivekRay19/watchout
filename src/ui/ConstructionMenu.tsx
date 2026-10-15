@@ -23,7 +23,7 @@ interface ConstructionMenuProps {
 }
 
 export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({ engine }) => {
-  const [activeCategory, setActiveCategory] = useState<BuildingCategory | null>('residential');
+  const [activeCategory, setActiveCategory] = useState<BuildingCategory | null>(null);
   const activeBuildingType = engine.placement.activeBuildingType;
   const treasury = engine.economy.state.treasury;
 
@@ -72,18 +72,30 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({ engine }) =>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
             <span className="font-mono text-cyan-300 font-bold">
-              PLACING: {BUILDING_DEFS[activeBuildingType].name.toUpperCase()}
+              {activeBuildingType.startsWith('road_') ? 'ROAD TOOL:' : 'PLACING:'} {BUILDING_DEFS[activeBuildingType].name.toUpperCase()}
             </span>
+            {activeBuildingType.startsWith('road_') && (
+              <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300 font-semibold">
+                {engine.placement.roadStartNode ? 'Step 2: Click Destination' : 'Step 1: Click Start Point'}
+              </span>
+            )}
+            {activeBuildingType.startsWith('road_') && engine.placement.roadCostEstimate > 0 && (
+              <span className="font-mono text-[11px] text-emerald-400 font-bold">
+                Est: ${engine.placement.roadCostEstimate.toLocaleString()}
+              </span>
+            )}
           </div>
           <div className="h-4 w-px bg-slate-800" />
-          <button
-            onClick={handleRotate}
-            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1 rounded-lg border border-slate-700 transition-colors font-mono"
-            title="Rotate Building (Key: R)"
-          >
-            <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
-            <span>ROTATE (R)</span>
-          </button>
+          {!activeBuildingType.startsWith('road_') && (
+            <button
+              onClick={handleRotate}
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1 rounded-lg border border-slate-700 transition-colors font-mono"
+              title="Rotate Building (Key: R)"
+            >
+              <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
+              <span>ROTATE (R)</span>
+            </button>
+          )}
           <button
             onClick={handleCancelPlacement}
             className="flex items-center gap-1 bg-red-950/80 hover:bg-red-900 text-red-300 px-3 py-1 rounded-lg border border-red-800/80 transition-colors font-mono"

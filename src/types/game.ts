@@ -90,6 +90,13 @@ export interface PlacedBuilding {
   level: number;
   lastRepaired?: number;
   damageFire?: boolean;
+  // Air Defense State
+  ammo?: number;
+  maxAmmo?: number;
+  isReloading?: boolean;
+  reloadProgress?: number;
+  assignedTargetId?: string;
+  defenseStatus?: 'IDLE' | 'TRACKING' | 'FIRING' | 'RELOADING' | 'UNPOWERED' | 'DEPLETED';
 }
 
 export interface RoadNode {
@@ -133,6 +140,15 @@ export interface EconomyState {
   threatLevel: 'MINIMAL' | 'ELEVATED' | 'HIGH' | 'CRITICAL';
 }
 
+export type ThreatLifecycleState =
+  | 'UNDETECTED'
+  | 'DETECTED'
+  | 'TRACKED'
+  | 'ENGAGED'
+  | 'INTERCEPTED'
+  | 'IMPACTED'
+  | 'EXPIRED';
+
 export interface Threat {
   id: string;
   name: string;
@@ -147,8 +163,10 @@ export interface Threat {
   health: number;
   maxHealth: number;
   detected: boolean;
+  state: ThreatLifecycleState;
   altitude: number;
   heading: number;
+  interceptorsInFlight: number;
 }
 
 export interface InterceptorMissile {
@@ -159,9 +177,13 @@ export interface InterceptorMissile {
   x: number;
   y: number;
   z: number;
+  prevX: number;
+  prevY: number;
+  prevZ: number;
   targetThreatId: string;
   speed: number;
   lifeTime: number;
+  maxLifeTime: number;
 }
 
 export type MissionStatus = 'READY' | 'PREPARING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';

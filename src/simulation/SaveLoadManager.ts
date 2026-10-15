@@ -24,7 +24,7 @@ export class SaveLoadManager {
   ): boolean {
     try {
       const data: GameSaveData = {
-        version: '1.1.0',
+        version: '1.2.0',
         timestamp: Date.now(),
         buildings,
         roadNodes,
@@ -72,7 +72,7 @@ export class SaveLoadManager {
     settings: GameSettings
   ): string {
     const data: GameSaveData = {
-      version: '1.1.0',
+      version: '1.2.0',
       timestamp: Date.now(),
       buildings,
       roadNodes,

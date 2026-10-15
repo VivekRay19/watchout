@@ -8,12 +8,13 @@ import {
   X,
   Zap,
   Droplets,
-  ShieldAlert,
-  CheckCircle,
-  Eye,
+  Layers,
   Users,
   Briefcase,
-  Layers,
+  Crosshair,
+  Shield,
+  Eye,
+  RotateCw,
 } from 'lucide-react';
 import { soundManager } from '../audio/SoundManager';
 
@@ -33,6 +34,9 @@ export const BuildingInspector: React.FC<BuildingInspectorProps> = ({
   const isDamaged = building.health < building.maxHealth;
   const repairCost = Math.round((1 - building.health / building.maxHealth) * def.cost * 0.5);
   const salvageValue = Math.round(def.cost * 0.4);
+
+  const isAirDefense = building.type === 'def_sam_battery' || building.type === 'def_ciws';
+  const isRadar = building.type === 'def_radar';
 
   const handleRepair = () => {
     engine.repairBuilding(building.id);
@@ -60,14 +64,14 @@ export const BuildingInspector: React.FC<BuildingInspectorProps> = ({
             {def.name}
           </h2>
           <span className="text-[10px] font-mono text-slate-400">
-            Coordinates: [{building.x}, {building.z}]
+            Sector Grid: [{building.x}, {building.z}]
           </span>
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={handleFocus}
-            className="p-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-cyan-400 border border-slate-800 transition-colors"
-            title="Focus Camera"
+            className="p-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-cyan-400 border border-slate-800 transition-colors"
+            title="Focus Camera on Structure"
           >
             <Eye className="w-3.5 h-3.5" />
           </button>
@@ -76,7 +80,7 @@ export const BuildingInspector: React.FC<BuildingInspectorProps> = ({
               soundManager.playClick();
               onClose();
             }}
-            className="p-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition-colors"
+            className="p-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition-colors"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -84,11 +88,11 @@ export const BuildingInspector: React.FC<BuildingInspectorProps> = ({
       </div>
 
       {/* Health & Status */}
-      <div className="my-3 space-y-2">
-        <div className="flex items-center justify-between font-mono text-[11px]">
+      <div className="my-3 space-y-2 font-mono">
+        <div className="flex items-center justify-between text-[11px]">
           <span className="text-slate-400 flex items-center gap-1">
             <Layers className="w-3 h-3 text-slate-400" />
-            Integrity:
+            Structural Integrity:
           </span>
           <span
             className={`font-bold ${
@@ -115,29 +119,82 @@ export const BuildingInspector: React.FC<BuildingInspectorProps> = ({
           />
         </div>
 
-        {/* Utilities check */}
-        <div className="grid grid-cols-2 gap-2 pt-1 font-mono text-[10px]">
-          <div className="flex items-center gap-1.5 bg-slate-900/80 p-1.5 rounded border border-slate-800">
+        {/* Utilities Check */}
+        <div className="grid grid-cols-2 gap-2 pt-1 text-[10px]">
+          <div className="flex items-center gap-1.5 bg-slate-900/80 p-1.5 rounded-lg border border-slate-800">
             <Zap className={`w-3 h-3 ${building.powered ? 'text-amber-400' : 'text-slate-500'}`} />
-            <span className={building.powered ? 'text-slate-200' : 'text-red-400'}>
+            <span className={building.powered ? 'text-slate-200' : 'text-red-400 font-bold'}>
               {building.powered ? 'Powered' : 'Blackout!'}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 bg-slate-900/80 p-1.5 rounded border border-slate-800">
+          <div className="flex items-center gap-1.5 bg-slate-900/80 p-1.5 rounded-lg border border-slate-800">
             <Droplets className={`w-3 h-3 ${building.watered ? 'text-cyan-400' : 'text-slate-500'}`} />
-            <span className={building.watered ? 'text-slate-200' : 'text-red-400'}>
-              {building.watered ? 'Water Supply' : 'No Water!'}
+            <span className={building.watered ? 'text-slate-200' : 'text-red-400 font-bold'}>
+              {building.watered ? 'Water Grid' : 'Dry!'}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Stats Breakdown */}
+      {/* Specific Contextual Telemetry */}
+      {isAirDefense && (
+        <div className="bg-red-950/20 rounded-xl p-2.5 border border-red-900/40 space-y-1.5 font-mono text-[11px] mb-3">
+          <div className="flex items-center justify-between text-red-300 font-bold">
+            <span className="flex items-center gap-1">
+              <Crosshair className="w-3.5 h-3.5 text-red-400" /> DEFENSE STATUS:
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-red-900/40 text-red-200 text-[10px]">
+              {building.defenseStatus || 'READY'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-slate-300">
+            <span>Ammunition / Interceptors:</span>
+            <span className="font-bold text-white">
+              {building.ammo ?? 4}/{building.maxAmmo ?? 4}
+            </span>
+          </div>
+          {building.isReloading && (
+            <div className="space-y-1 pt-1">
+              <div className="flex justify-between text-[10px] text-amber-400">
+                <span>REARMING CANISTERS...</span>
+                <span>{Math.round(((building.reloadProgress || 0) / 8) * 100)}%</span>
+              </div>
+              <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-amber-500"
+                  style={{ width: `${Math.min(100, (((building.reloadProgress || 0) / 8) * 100))}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {building.assignedTargetId && (
+            <div className="text-[10px] text-cyan-300 pt-0.5">
+              Assigned Track: <strong className="text-white">{building.assignedTargetId}</strong>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isRadar && (
+        <div className="bg-cyan-950/20 rounded-xl p-2.5 border border-cyan-900/40 space-y-1.5 font-mono text-[11px] mb-3">
+          <div className="flex items-center justify-between text-cyan-300 font-bold">
+            <span className="flex items-center gap-1">
+              <Shield className="w-3.5 h-3.5 text-cyan-400" /> RADAR COVERAGE:
+            </span>
+            <span>{def.radarRadius} km</span>
+          </div>
+          <div className="text-[10px] text-slate-300">
+            Phased-array scanner actively monitoring high and low altitude sectors.
+          </div>
+        </div>
+      )}
+
+      {/* General Stats Breakdown */}
       <div className="bg-slate-900/60 rounded-xl p-2.5 border border-slate-800/80 space-y-1.5 font-mono text-[11px] mb-3">
         {def.populationCapacity && (
           <div className="flex items-center justify-between text-slate-300">
             <span className="flex items-center gap-1 text-slate-400">
-              <Users className="w-3 h-3 text-blue-400" /> Housing:
+              <Users className="w-3 h-3 text-blue-400" /> Housing Capacity:
             </span>
             <span>{def.populationCapacity} Citizens</span>
           </div>
@@ -145,33 +202,21 @@ export const BuildingInspector: React.FC<BuildingInspectorProps> = ({
         {def.jobsCapacity && (
           <div className="flex items-center justify-between text-slate-300">
             <span className="flex items-center gap-1 text-slate-400">
-              <Briefcase className="w-3 h-3 text-emerald-400" /> Jobs:
+              <Briefcase className="w-3 h-3 text-emerald-400" /> Jobs Available:
             </span>
-            <span>{def.jobsCapacity} Employed</span>
+            <span>{def.jobsCapacity} Workers</span>
           </div>
         )}
         {def.productionType && (
           <div className="flex items-center justify-between text-slate-300">
-            <span className="text-slate-400">Produces:</span>
+            <span className="text-slate-400">Manufacturing:</span>
             <span className="text-lime-400 font-bold uppercase">
               {def.productionType} (+{def.productionRate}/tick)
             </span>
           </div>
         )}
-        {def.radarRadius && (
-          <div className="flex items-center justify-between text-slate-300">
-            <span className="text-slate-400">Radar Coverage:</span>
-            <span className="text-cyan-400">{def.radarRadius} km</span>
-          </div>
-        )}
-        {def.defenseRange && (
-          <div className="flex items-center justify-between text-slate-300">
-            <span className="text-slate-400">Interception Range:</span>
-            <span className="text-emerald-400">{def.defenseRange} km</span>
-          </div>
-        )}
         <div className="flex items-center justify-between text-slate-400 text-[10px] pt-1 border-t border-slate-800">
-          <span>Hourly Maintenance:</span>
+          <span>Operating Expense:</span>
           <span className="text-red-300">-${def.maintenance}/hr</span>
         </div>
       </div>

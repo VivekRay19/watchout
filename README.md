@@ -1,7 +1,19 @@
 # WATCH OUT
-### BUILD. DEFEND. STRIKE.
+### BUILD. DEFEND. STRIKE. (v1.2.0)
 
 **WATCH OUT** is a high-polish 3D city-building and territorial military strategy game. It merges the deep urban planning, road construction, utilities, and economy simulation of modern city-builders with real-time tactical air defense, radar detection networks, and offensive operations against rival hostile sectors.
+
+---
+
+## What's New in Version 1.2.0
+
+- **Realistic Multi-Octave Terrain & Biomes**: Organic rolling elevations, slope-dependent geological rock texturing, natural sandy shorelines, and gentle river valleys.
+- **High-Fidelity 3D Architecture**: Detailed residential, commercial, and industrial buildings with recessed windows, floor mullions, gabled roofs, balconies, rooftop HVAC mechanical units, and a landmark skyscraper with an emergency helipad.
+- **Detailed Military Installations**: Rotating lattice phased-array radar dishes, 8-wheel HEMTT tactical SAM launcher trucks with 360° azimuth and pitch-elevating mounts, Phalanx CIWS point defense domes, and reinforced command bunkers.
+- **Interactive Two-Point Road Construction**: Dynamic road preview with real-time cost and distance estimation, magnetic endpoint junction snapping with cyan glowing targeting rings, seamless intersection junction patches, and continuous road chaining.
+- **Authoritative Air Defense Combat Simulation**: Continuous threat lifecycle tracking (`UNDETECTED` -> `DETECTED` -> `TRACKED` -> `ENGAGED` -> `INTERCEPTED` -> `IMPACTED`), true 3D turret aiming, ammunition tracking with realistic reload delays, and swept-segment continuous collision detection preventing missile tunneling.
+- **Guided Onboarding Tutorial**: Streamlined 7-step progressive tutorial card guiding new commanders through building their city and testing air defenses with target drones.
+- **Modernized UI/UX**: Eliminated startup clutter with progressive disclosure, collapsible secondary telemetry, one-click threat camera focus, and collapsible radar minimap.
 
 ---
 
@@ -10,8 +22,9 @@
 1. **Expansive 3D Environment**:
    - 600x600 unit procedural rolling terrain with river channels, coastal bay, rocky mountains, and animated water.
    - Dense instanced forests with thousands of pine conifers, oak trees, and rocks that clear dynamically when you build.
-2. **Urban Planning & Road Infrastructure**:
-   - Construct asphalt streets, highways, and reinforced suspension bridges over water.
+2. **Urban Planning & Two-Point Road Infrastructure**:
+   - Two-point interactive drawing of asphalt streets, highways, and reinforced suspension bridges over water.
+   - Automatic bridge piers, junction patches, and lane striping.
    - 20+ specialized structures across 9 categories (Roads, Residential, Commercial, Industrial, Utilities, Services, Defense, Military, Research).
    - Dynamic day/night cycle with illuminated building windows, streetlights, and moving civilian traffic with night headlights.
 3. **Economic Simulation & Utility Grids**:

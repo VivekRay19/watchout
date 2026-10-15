@@ -8,7 +8,7 @@ export class TerrainGenerator {
   private segments: number;
   public waterLevel: number = -1.8;
 
-  constructor(width = 600, depth = 600, segments = 160) {
+  constructor(width = 600, depth = 600, segments = 180) {
     this.width = width;
     this.depth = depth;
     this.segments = segments;
@@ -17,31 +17,83 @@ export class TerrainGenerator {
     geometry.rotateX(-Math.PI / 2);
 
     const positions = geometry.attributes.position;
-    const colors = new Float32Array(positions.count * 3);
+    const vertexCount = positions.count;
 
-    const colorSand = new THREE.Color(0xd2b48c); // Khaki sand
-    const colorLush = new THREE.Color(0x3e7a3e); // Deep green
-    const colorMeadow = new THREE.Color(0x568249); // Warm grassy meadow
-    const colorRock = new THREE.Color(0x6e7175); // Slate rock
-    const colorSnow = new THREE.Color(0xdce5eb); // Cold ridge
-
-    for (let i = 0; i < positions.count; i++) {
+    // First pass: Calculate elevations
+    for (let i = 0; i < vertexCount; i++) {
       const x = positions.getX(i);
       const z = positions.getZ(i);
-
       const h = this.getHeight(x, z);
       positions.setY(i, h);
+    }
 
-      // Color based on height and slope
+    geometry.computeVertexNormals();
+    const normals = geometry.attributes.normal;
+    const colors = new Float32Array(vertexCount * 3);
+
+    // Natural PBR color palette
+    const colorSand = new THREE.Color(0xd7c49e);      // Golden shore sand
+    const colorWetSand = new THREE.Color(0xa89371);   // Wet tide line
+    const colorFertileGrass = new THREE.Color(0x385e2b);// Deep lush grass
+    const colorMeadowGrass = new THREE.Color(0x4d753b); // Natural highland grass
+    const colorDryTurf = new THREE.Color(0x607d47);    // Dry hillside turf
+    const colorDarkEarth = new THREE.Color(0x423828);  // Rich loamy soil
+    const colorRockDark = new THREE.Color(0x4a4c50);   // Slate cliff rock
+    const colorRockLight = new THREE.Color(0x6e7177);  // Weathered granite
+    const colorSnow = new THREE.Color(0xe8eef2);       // Alpine snow crest
+
+    // Second pass: Calculate slope-dependent and elevation-dependent realistic coloring
+    for (let i = 0; i < vertexCount; i++) {
+      const h = positions.getY(i);
+      const ny = normals.getY(i); // 1.0 = completely flat, 0.0 = vertical cliff
+      const slope = 1.0 - Math.max(0, Math.min(1, ny)); // 0 = flat, 1 = vertical
+
       const c = new THREE.Color();
-      if (h < this.waterLevel + 1.2) {
-        c.lerpColors(colorSand, colorLush, Math.max(0, (h - this.waterLevel) / 1.2));
-      } else if (h < 12) {
-        c.lerpColors(colorLush, colorMeadow, (h - (this.waterLevel + 1.2)) / 10);
-      } else if (h < 26) {
-        c.lerpColors(colorMeadow, colorRock, (h - 12) / 14);
+
+      if (h < this.waterLevel + 0.6) {
+        // Shoreline / sand
+        const t = Math.max(0, Math.min(1, (h - (this.waterLevel - 1.5)) / 2.1));
+        c.lerpColors(colorWetSand, colorSand, t);
+      } else if (h < 14) {
+        // Lowlands & River Valley
+        const grassBlend = Math.max(0, Math.min(1, (h - (this.waterLevel + 0.6)) / 6.0));
+        const baseGrass = new THREE.Color().lerpColors(colorSand, colorFertileGrass, grassBlend);
+
+        if (slope > 0.35) {
+          // Steep riverbank or hillock exposing soil/rock
+          const rockBlend = Math.min(1, (slope - 0.35) / 0.35);
+          c.lerpColors(baseGrass, colorDarkEarth, rockBlend);
+        } else {
+          // Lush flat valley with meadow variation
+          const meadowBlend = Math.max(0, Math.min(1, (h - 4.0) / 10.0));
+          c.lerpColors(baseGrass, colorMeadowGrass, meadowBlend);
+        }
+      } else if (h < 28) {
+        // Rolling Hills and Foothills
+        const hillBlend = (h - 14) / 14;
+        const uplandColor = new THREE.Color().lerpColors(colorMeadowGrass, colorDryTurf, hillBlend);
+
+        if (slope > 0.28) {
+          // Rock exposure on hillsides
+          const rockT = Math.min(1, (slope - 0.28) / 0.4);
+          c.lerpColors(uplandColor, colorRockDark, rockT);
+        } else {
+          c.copy(uplandColor);
+        }
       } else {
-        c.lerpColors(colorRock, colorSnow, Math.min(1, (h - 26) / 10));
+        // High Mountain Ridges
+        const alpineBlend = Math.min(1, (h - 28) / 12);
+        const cragColor = new THREE.Color().lerpColors(colorRockDark, colorRockLight, alpineBlend);
+
+        if (slope > 0.45) {
+          c.copy(colorRockDark);
+        } else if (h > 36) {
+          // Snow dusted peaks on flatter crests
+          const snowT = Math.min(1, (h - 36) / 8);
+          c.lerpColors(cragColor, colorSnow, snowT);
+        } else {
+          c.copy(cragColor);
+        }
       }
 
       colors[i * 3] = c.r;
@@ -50,12 +102,18 @@ export class TerrainGenerator {
     }
 
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geometry.computeVertexNormals();
+
+    // Generate procedural micro-noise texture for realistic ground detail
+    const groundTexture = this.createProceduralGroundTexture();
+    groundTexture.wrapS = THREE.RepeatWrapping;
+    groundTexture.wrapT = THREE.RepeatWrapping;
+    groundTexture.repeat.set(48, 48);
 
     const terrainMaterial = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.85,
-      metalness: 0.05,
+      map: groundTexture,
+      roughness: 0.88,
+      metalness: 0.04,
       flatShading: false,
     });
 
@@ -63,15 +121,16 @@ export class TerrainGenerator {
     this.mesh.receiveShadow = true;
     this.mesh.castShadow = false;
 
-    // Water plane
-    const waterGeo = new THREE.PlaneGeometry(width, depth, 40, 40);
+    // Water Surface with specular sheen
+    const waterGeo = new THREE.PlaneGeometry(width, depth, 48, 48);
     waterGeo.rotateX(-Math.PI / 2);
+
     const waterMat = new THREE.MeshStandardMaterial({
-      color: 0x1a5276,
-      roughness: 0.15,
-      metalness: 0.8,
+      color: 0x124866,
+      roughness: 0.12,
+      metalness: 0.75,
       transparent: true,
-      opacity: 0.82,
+      opacity: 0.85,
     });
 
     this.waterMesh = new THREE.Mesh(waterGeo, waterMat);
@@ -79,69 +138,100 @@ export class TerrainGenerator {
     this.waterMesh.receiveShadow = true;
   }
 
-  // Smooth procedural noise formula for elevation
-  public getHeight(x: number, z: number): number {
-    // Distance from center
-    const distCenter = Math.sqrt(x * x + z * z);
+  private createProceduralGroundTexture(): THREE.CanvasTexture {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
 
-    // River channel cutting diagonally towards the east bay (x > 80)
-    // River equation: curved channel from (-180, -280) to (180, 280)
-    const riverCenter = Math.sin(z * 0.015) * 45 + (z * 0.35);
+    if (ctx) {
+      // Neutral noise overlay
+      ctx.fillStyle = '#808080';
+      ctx.fillRect(0, 0, size, size);
+
+      const imgData = ctx.getImageData(0, 0, size, size);
+      const data = imgData.data;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const noise = (Math.random() - 0.5) * 45;
+        const val = Math.max(0, Math.min(255, 128 + noise));
+        data[i] = val;
+        data[i + 1] = val;
+        data[i + 2] = val;
+        data[i + 3] = 255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  // Smooth multi-octave height function with natural river curving
+  public getHeight(x: number, z: number): number {
+    const distCenter = Math.hypot(x, z);
+
+    // River channel equation: smooth S-curve from southwest to east bay
+    const riverCenter = Math.sin(z * 0.012) * 55 + (z * 0.32);
     const distToRiver = Math.abs(x - riverCenter);
 
-    // Coastal bay on the far east side (x > 150)
-    const isBay = x > 160;
-    const bayFactor = isBay ? Math.min(1, (x - 160) / 80) : 0;
+    // Eastern coastal bay (x > 150)
+    const isBay = x > 150;
+    const bayFactor = isBay ? Math.min(1, (x - 150) / 75) : 0;
 
-    // Rolling gentle hills
-    const hill1 = Math.sin(x * 0.012) * Math.cos(z * 0.014) * 5;
-    const hill2 = Math.sin(x * 0.03 + 1.2) * Math.sin(z * 0.025) * 3;
-    const micro = Math.cos(x * 0.06) * Math.sin(z * 0.06) * 1.2;
+    // Multi-octave natural rolling terrain
+    const oct1 = Math.sin(x * 0.009) * Math.cos(z * 0.011) * 6.5;
+    const oct2 = Math.sin(x * 0.022 + 1.4) * Math.sin(z * 0.018) * 3.2;
+    const oct3 = Math.cos(x * 0.045) * Math.sin(z * 0.042) * 1.4;
+    const oct4 = Math.sin(x * 0.09) * Math.cos(z * 0.09) * 0.6;
 
-    // Mountains at outer edges (north and west borders)
+    // Distant mountain ranges (North and Far West)
     let mountain = 0;
-    if (z < -120) {
-      mountain += Math.pow(Math.abs(z + 120) / 45, 1.8) * (2.5 + Math.sin(x * 0.04) * 1.5);
+    if (z < -110) {
+      const d = Math.abs(z + 110) / 50;
+      mountain += Math.pow(d, 1.7) * (3.5 + Math.sin(x * 0.035) * 2.0);
     }
-    if (x < -140) {
-      mountain += Math.pow(Math.abs(x + 140) / 45, 1.8) * (2.5 + Math.cos(z * 0.04) * 1.5);
+    if (x < -135) {
+      const d = Math.abs(x + 135) / 50;
+      mountain += Math.pow(d, 1.7) * (3.5 + Math.cos(z * 0.035) * 2.0);
     }
 
-    let elevation = hill1 + hill2 + micro + mountain;
+    let elevation = oct1 + oct2 + oct3 + oct4 + mountain;
 
-    // Carve river channel
-    if (distToRiver < 35) {
-      const riverDepth = (1 - distToRiver / 35) * 7.5;
+    // Carve smooth river bed using hermite smoothstep
+    if (distToRiver < 42) {
+      const t = distToRiver / 42;
+      const smoothFactor = (1 - (t * t * (3 - 2 * t))); // Hermite smoothstep
+      const riverDepth = smoothFactor * 8.2;
       elevation -= riverDepth;
     }
 
     // Carve coastal sea on east
     if (bayFactor > 0) {
-      elevation = elevation * (1 - bayFactor) - (bayFactor * 6.0);
+      elevation = elevation * (1 - bayFactor) - (bayFactor * 6.5);
     }
 
-    // Flatten central urban plateau for building
-    if (distCenter < 140 && distToRiver > 30 && !isBay) {
-      const blend = Math.max(0, 1 - distCenter / 140);
-      elevation = elevation * (1 - blend * 0.75);
+    // Flatten central urban development zone for easy building
+    if (distCenter < 145 && distToRiver > 32 && !isBay) {
+      const blend = Math.max(0, 1 - distCenter / 145);
+      elevation = elevation * (1 - blend * 0.78);
     }
 
     return elevation;
   }
 
   public isWater(x: number, z: number): boolean {
-    return this.getHeight(x, z) <= this.waterLevel + 0.3;
+    return this.getHeight(x, z) <= this.waterLevel + 0.35;
   }
 
   public isNearShoreline(x: number, z: number): boolean {
     const h = this.getHeight(x, z);
-    return h >= this.waterLevel - 0.5 && h <= this.waterLevel + 2.5;
+    return h >= this.waterLevel - 0.5 && h <= this.waterLevel + 2.8;
   }
 
   public update(time: number) {
-    // Gentle water wave animation
     if (this.waterMesh) {
-      this.waterMesh.position.y = this.waterLevel + Math.sin(time * 1.8) * 0.08;
+      this.waterMesh.position.y = this.waterLevel + Math.sin(time * 1.5) * 0.06;
     }
   }
 }
