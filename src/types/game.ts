@@ -88,6 +88,12 @@ export interface PlacedBuilding {
   watered: boolean;
   active: boolean;
   level: number;
+  variant?: number;
+  // Construction & Repair State
+  isConstructing?: boolean;
+  constructionProgress?: number; // 0 to 1
+  isRepairing?: boolean;
+  repairProgress?: number; // 0 to 1
   lastRepaired?: number;
   damageFire?: boolean;
   // Air Defense State
@@ -125,6 +131,12 @@ export interface EconomyState {
   jobsFilled: number;
   employmentRate: number;
   approvalRating: number; // 0-100%
+  // Zone Demand & City Conditions (0-100%)
+  residentialDemand?: number;
+  commercialDemand?: number;
+  industrialDemand?: number;
+  pollutionLevel?: number;
+  trafficCongestion?: number;
   // Resources
   steel: number;
   concrete: number;

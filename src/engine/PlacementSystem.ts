@@ -324,6 +324,9 @@ export class PlacementSystem {
       watered: true,
       active: true,
       level: 1,
+      variant: Math.floor(Math.random() * 4),
+      isConstructing: true,
+      constructionProgress: 0.08,
     };
 
     const clearRadius = Math.max(def.width, def.depth) * 2.4;

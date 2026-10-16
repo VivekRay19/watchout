@@ -8,13 +8,18 @@ export class WorldManager {
   private canvas: HTMLCanvasElement;
   private terrain: TerrainGenerator;
 
-  // Isometric-style camera navigation state
-  public target: THREE.Vector3 = new THREE.Vector3(10, 1.6, 2);
-  public distance: number = 205;
+  // Isometric-style camera navigation state with smooth damping
+  public target: THREE.Vector3 = new THREE.Vector3(14, 1.8, 0);
+  public desiredTarget: THREE.Vector3 = new THREE.Vector3(14, 1.8, 0);
+  public distance: number = 215;
+  public desiredDistance: number = 215;
   public minDistance: number = 35;
-  public maxDistance: number = 340;
-  public azimuth: number = -0.58; // Isometric angle framing NW hills top-left, harbor bottom-left, river right
+  public maxDistance: number = 350;
+  public azimuth: number = -0.56;
+  public desiredAzimuth: number = -0.56;
   public elevation: number = 0.64; // ~37 deg isometric pitch
+  public desiredElevation: number = 0.64;
+
   private isRightDragging = false;
   private isMiddleDragging = false;
   private isLeftDragging = false;
@@ -24,14 +29,15 @@ export class WorldManager {
   private lastMouseY = 0;
   public keyState: { [key: string]: boolean } = {};
 
-  // Lighting & Day/Night
+  // Lighting & Smooth Day/Night Cycle
   public sunLight: THREE.DirectionalLight;
   public moonLight: THREE.DirectionalLight;
   public hemiLight: THREE.HemisphereLight;
   public ambientLight: THREE.AmbientLight;
-  public timeOfDay: number = 10.5; // 10:30 AM bright morning light (matching reference)
-  public daySpeed: number = 0.015; // Gentle progression so sunny aesthetic stays consistent
+  public timeOfDay: number = 10.4; // 10:24 AM bright morning light (matches reference)
+  public daySpeed: number = 0.015;
   public isNight: boolean = false;
+  public nightFactor: number = 0; // 0.0 = bright day, 1.0 = full night
 
   // Raycasting
   public raycaster: THREE.Raycaster;
@@ -41,10 +47,10 @@ export class WorldManager {
     this.canvas = canvas;
     this.terrain = terrain;
 
-    // Scene with cheerful sky blue background and very subtle aerial perspective fog
+    // Scene with cheerful sky blue background and subtle aerial perspective fog
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x6ec6f5);
-    this.scene.fog = new THREE.FogExp2(0x8cd3f8, 0.00075);
+    this.scene.fog = new THREE.FogExp2(0x8cd3f8, 0.00072);
 
     // Narrow-FOV Camera (26 deg) for clean, readable isometric city-block proportions
     const aspect = canvas.clientWidth / canvas.clientHeight;
@@ -64,10 +70,10 @@ export class WorldManager {
     this.renderer.toneMappingExposure = 1.12;
 
     // Bright, warm, cohesive lighting
-    this.hemiLight = new THREE.HemisphereLight(0xe6f4ff, 0x8ae068, 0.95);
+    this.hemiLight = new THREE.HemisphereLight(0xe6f4ff, 0x8ae068, 0.96);
     this.scene.add(this.hemiLight);
 
-    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.46);
     this.scene.add(this.ambientLight);
 
     // Directional Sun Light casting crisp, soft isometric shadows
@@ -76,8 +82,8 @@ export class WorldManager {
     this.sunLight.shadow.mapSize.width = 2048;
     this.sunLight.shadow.mapSize.height = 2048;
     this.sunLight.shadow.camera.near = 10;
-    this.sunLight.shadow.camera.far = 480;
-    const d = 140;
+    this.sunLight.shadow.camera.far = 500;
+    const d = 150;
     this.sunLight.shadow.camera.left = -d;
     this.sunLight.shadow.camera.right = d;
     this.sunLight.shadow.camera.top = d;
@@ -145,15 +151,18 @@ export class WorldManager {
       }
 
       if (this.isRightDragging) {
-        this.azimuth -= deltaX * 0.005;
-        this.elevation = Math.max(0.28, Math.min(Math.PI / 2.2, this.elevation + deltaY * 0.004));
+        this.desiredAzimuth -= deltaX * 0.005;
+        this.desiredElevation = Math.max(
+          0.3,
+          Math.min(Math.PI / 2.25, this.desiredElevation + deltaY * 0.004)
+        );
       } else if (this.isMiddleDragging || (this.isLeftDragging && this.dragDistance > 6)) {
         const panSpeed = this.distance * 0.00095;
         const forward = new THREE.Vector3(-Math.sin(this.azimuth), 0, -Math.cos(this.azimuth));
         const right = new THREE.Vector3(Math.cos(this.azimuth), 0, -Math.sin(this.azimuth));
 
-        this.target.addScaledVector(right, -deltaX * panSpeed);
-        this.target.addScaledVector(forward, deltaY * panSpeed);
+        this.desiredTarget.addScaledVector(right, -deltaX * panSpeed);
+        this.desiredTarget.addScaledVector(forward, deltaY * panSpeed);
       }
     });
 
@@ -161,8 +170,11 @@ export class WorldManager {
       'wheel',
       (e) => {
         e.preventDefault();
-        const zoomDelta = e.deltaY * 0.05 * (this.distance / 65);
-        this.distance = Math.max(this.minDistance, Math.min(this.maxDistance, this.distance + zoomDelta));
+        const zoomDelta = e.deltaY * 0.05 * (this.desiredDistance / 65);
+        this.desiredDistance = Math.max(
+          this.minDistance,
+          Math.min(this.maxDistance, this.desiredDistance + zoomDelta)
+        );
       },
       { passive: false }
     );
@@ -181,15 +193,20 @@ export class WorldManager {
   }
 
   public resetCamera() {
-    this.target.set(10, 1.6, 2);
-    this.distance = 205;
-    this.azimuth = -0.58;
+    this.desiredTarget.set(14, 1.8, 0);
+    this.target.copy(this.desiredTarget);
+    this.desiredDistance = 215;
+    this.distance = 215;
+    this.desiredAzimuth = -0.56;
+    this.azimuth = -0.56;
+    this.desiredElevation = 0.64;
     this.elevation = 0.64;
   }
 
   public focusOn(x: number, z: number, dist = 95) {
-    this.target.set(x, this.terrain.getHeight(x, z), z);
-    this.distance = dist;
+    const y = Math.max(0, this.terrain.getHeight(x, z));
+    this.desiredTarget.set(x, y, z);
+    this.desiredDistance = dist;
   }
 
   public update(delta: number, isPaused: boolean) {
@@ -198,17 +215,24 @@ export class WorldManager {
     const forward = new THREE.Vector3(-Math.sin(this.azimuth), 0, -Math.cos(this.azimuth));
     const right = new THREE.Vector3(Math.cos(this.azimuth), 0, -Math.sin(this.azimuth));
 
-    if (this.keyState['w'] || this.keyState['arrowup']) this.target.addScaledVector(forward, panSpeed);
-    if (this.keyState['s'] || this.keyState['arrowdown']) this.target.addScaledVector(forward, -panSpeed);
-    if (this.keyState['a'] || this.keyState['arrowleft']) this.target.addScaledVector(right, -panSpeed);
-    if (this.keyState['d'] || this.keyState['arrowright']) this.target.addScaledVector(right, panSpeed);
+    if (this.keyState['w'] || this.keyState['arrowup']) this.desiredTarget.addScaledVector(forward, panSpeed);
+    if (this.keyState['s'] || this.keyState['arrowdown']) this.desiredTarget.addScaledVector(forward, -panSpeed);
+    if (this.keyState['a'] || this.keyState['arrowleft']) this.desiredTarget.addScaledVector(right, -panSpeed);
+    if (this.keyState['d'] || this.keyState['arrowright']) this.desiredTarget.addScaledVector(right, panSpeed);
 
-    // Constrain camera bounds
-    this.target.x = Math.max(-250, Math.min(250, this.target.x));
-    this.target.z = Math.max(-250, Math.min(250, this.target.z));
-    this.target.y = Math.max(0, this.terrain.getHeight(this.target.x, this.target.z));
+    // Constrain desired camera bounds
+    this.desiredTarget.x = Math.max(-250, Math.min(250, this.desiredTarget.x));
+    this.desiredTarget.z = Math.max(-250, Math.min(250, this.desiredTarget.z));
+    this.desiredTarget.y = Math.max(0, this.terrain.getHeight(this.desiredTarget.x, this.desiredTarget.z));
 
-    // 2. Gentle Day / Night Clock
+    // Smooth camera damping
+    const damp = Math.min(1, delta * 14);
+    this.target.lerp(this.desiredTarget, damp);
+    this.distance = THREE.MathUtils.lerp(this.distance, this.desiredDistance, damp);
+    this.azimuth = THREE.MathUtils.lerp(this.azimuth, this.desiredAzimuth, damp);
+    this.elevation = THREE.MathUtils.lerp(this.elevation, this.desiredElevation, damp);
+
+    // 2. Smooth Day / Night Clock
     if (!isPaused) {
       this.timeOfDay = (this.timeOfDay + delta * this.daySpeed) % 24;
     }
@@ -218,10 +242,30 @@ export class WorldManager {
   }
 
   private updateLighting() {
-    const sunAngle = ((this.timeOfDay - 6) / 24) * Math.PI * 2;
-    const sunY = Math.sin(sunAngle);
+    const t = this.timeOfDay;
+    // Compute smooth nightFactor (0 = Day, 1 = Night) with Sunrise (5:30-7:30) and Sunset (17:30-20:00)
+    let nf = 0;
+    if (t >= 20.0 || t < 5.5) {
+      nf = 1.0;
+    } else if (t >= 5.5 && t < 7.5) {
+      nf = 1.0 - (t - 5.5) / 2.0;
+    } else if (t > 17.5 && t < 20.0) {
+      nf = (t - 17.5) / 2.5;
+    }
+    this.nightFactor = THREE.MathUtils.clamp(nf, 0, 1);
+    this.isNight = this.nightFactor > 0.5;
 
-    this.isNight = this.timeOfDay < 5.5 || this.timeOfDay > 20.0;
+    // Golden-hour factor peaks at sunrise (6.5) and sunset (18.7)
+    let golden = 0;
+    if (t >= 5.5 && t <= 8.0) {
+      golden = 1.0 - Math.abs(t - 6.75) / 1.25;
+    } else if (t >= 17.0 && t <= 20.0) {
+      golden = 1.0 - Math.abs(t - 18.5) / 1.5;
+    }
+    golden = THREE.MathUtils.clamp(golden, 0, 1);
+
+    const sunAngle = ((t - 6) / 24) * Math.PI * 2;
+    const sunY = Math.sin(sunAngle);
 
     // Keep sun angle attractive from the upper-right / south-east to give crisp 3D depth on city blocks
     const lightX = this.target.x + 95;
@@ -232,37 +276,27 @@ export class WorldManager {
     this.sunLight.target.position.copy(this.target);
     this.sunLight.target.updateMatrixWorld();
 
-    this.moonLight.position.set(this.target.x - 80, 70, this.target.z - 60);
+    this.moonLight.position.set(this.target.x - 80, 75, this.target.z - 60);
     this.moonLight.target.position.copy(this.target);
     this.moonLight.target.updateMatrixWorld();
 
-    if (!this.isNight && sunY > 0.05) {
-      // Bright, cheerful sunlit day (matches reference art direction)
-      this.scene.background = new THREE.Color(0x6ec6f5);
-      this.scene.fog?.color.setHex(0x8cd3f8);
-      this.sunLight.intensity = 1.72;
-      this.sunLight.color.setHex(0xfffbeb);
-      this.hemiLight.intensity = 0.95;
-      this.ambientLight.intensity = 0.45;
-      this.moonLight.intensity = 0.12;
-    } else if (!this.isNight) {
-      // Warm golden hour
-      this.scene.background = new THREE.Color(0xfba96c);
-      this.scene.fog?.color.setHex(0xfba96c);
-      this.sunLight.intensity = 1.15;
-      this.sunLight.color.setHex(0xfed7aa);
-      this.hemiLight.intensity = 0.65;
-      this.ambientLight.intensity = 0.35;
-      this.moonLight.intensity = 0.2;
-    } else {
-      // Soft readable twilight/night
-      this.scene.background = new THREE.Color(0x0f1e36);
-      this.scene.fog?.color.setHex(0x0f1e36);
-      this.sunLight.intensity = 0.25;
-      this.hemiLight.intensity = 0.4;
-      this.ambientLight.intensity = 0.3;
-      this.moonLight.intensity = 0.55;
-    }
+    // Interpolate Sky, Fog, and Light intensities smoothly across Sunrise -> Day -> Sunset -> Night
+    const daySky = new THREE.Color(0x6ec6f5);
+    const goldenSky = new THREE.Color(0xfba96c);
+    const nightSky = new THREE.Color(0x112240);
+
+    const skyColor = daySky.clone().lerp(goldenSky, golden * 0.75).lerp(nightSky, this.nightFactor);
+    this.scene.background = skyColor;
+    this.scene.fog?.color.copy(skyColor);
+
+    const daySun = new THREE.Color(0xfffbeb);
+    const goldenSun = new THREE.Color(0xfed7aa);
+    this.sunLight.color.copy(daySun).lerp(goldenSun, golden);
+
+    this.sunLight.intensity = THREE.MathUtils.lerp(1.74, 0.25, this.nightFactor);
+    this.hemiLight.intensity = THREE.MathUtils.lerp(0.96, 0.42, this.nightFactor);
+    this.ambientLight.intensity = THREE.MathUtils.lerp(0.46, 0.32, this.nightFactor);
+    this.moonLight.intensity = THREE.MathUtils.lerp(0.12, 0.62, this.nightFactor);
   }
 
   private updateCameraPosition() {
@@ -271,7 +305,7 @@ export class WorldManager {
     const y = this.target.y + this.distance * Math.sin(this.elevation);
 
     const groundY = this.terrain.getHeight(x, z);
-    const clampedY = Math.max(groundY + 4.0, y);
+    const clampedY = Math.max(groundY + 4.5, y);
 
     this.camera.position.set(x, clampedY, z);
     this.camera.lookAt(this.target);

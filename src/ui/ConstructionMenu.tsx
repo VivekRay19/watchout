@@ -6,7 +6,9 @@ import {
   Home,
   Store,
   Factory,
+  Zap,
   Shield,
+  Plane,
   RotateCw,
   X,
   Lock,
@@ -24,12 +26,24 @@ interface ConstructionMenuProps {
   onToggleLogs: () => void;
 }
 
-type ToolbarTab = 'roads' | 'residential' | 'commercial' | 'industry' | 'defense';
+type ToolbarTab =
+  | 'roads'
+  | 'residential'
+  | 'commercial'
+  | 'industrial'
+  | 'infrastructure'
+  | 'defense'
+  | 'military';
 
-const RoadIcon: React.FC<{ className?: string }> = ({ className = 'w-6 h-6' }) => (
+const RoadIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="none" className={className}>
     <path d="M7 20L10 4H14L17 20H7Z" fill="currentColor" fillOpacity="0.9" />
-    <path d="M12 6V9M12 11.5V14.5M12 17V19" stroke="#101c2e" strokeWidth="1.8" strokeLinecap="round" />
+    <path
+      d="M12 6V9M12 11.5V14.5M12 17V19"
+      stroke="#101c2e"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+    />
   </svg>
 );
 
@@ -45,11 +59,13 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
   const treasury = engine.economy.state.treasury;
 
   const tabs: { id: ToolbarTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'roads', label: 'Roads', icon: <RoadIcon className="w-6 h-6" /> },
-    { id: 'residential', label: 'Residential', icon: <Home className="w-6 h-6" /> },
-    { id: 'commercial', label: 'Commercial', icon: <Store className="w-6 h-6" /> },
-    { id: 'industry', label: 'Industry', icon: <Factory className="w-6 h-6" /> },
-    { id: 'defense', label: 'Defense', icon: <Shield className="w-6 h-6" /> },
+    { id: 'roads', label: 'Roads', icon: <RoadIcon className="w-5 h-5" /> },
+    { id: 'residential', label: 'Residential', icon: <Home className="w-5 h-5" /> },
+    { id: 'commercial', label: 'Commercial', icon: <Store className="w-5 h-5" /> },
+    { id: 'industrial', label: 'Industrial', icon: <Factory className="w-5 h-5" /> },
+    { id: 'infrastructure', label: 'Infrastructure', icon: <Zap className="w-5 h-5" /> },
+    { id: 'defense', label: 'Defense', icon: <Shield className="w-5 h-5" /> },
+    { id: 'military', label: 'Military', icon: <Plane className="w-5 h-5" /> },
   ];
 
   const getTabBuildings = (tab: ToolbarTab) => {
@@ -60,13 +76,17 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
       case 'residential':
         return all.filter((b) => b.category === 'residential');
       case 'commercial':
-        return all.filter((b) => b.category === 'commercial' || b.category === 'services');
-      case 'industry':
-        return all.filter((b) => b.category === 'industrial' || b.category === 'utilities');
-      case 'defense':
+        return all.filter((b) => b.category === 'commercial');
+      case 'industrial':
+        return all.filter((b) => b.category === 'industrial');
+      case 'infrastructure':
         return all.filter(
-          (b) => b.category === 'defense' || b.category === 'military' || b.category === 'research'
+          (b) => b.category === 'utilities' || b.category === 'services' || b.id === 'def_bunker'
         );
+      case 'defense':
+        return all.filter((b) => b.category === 'defense' && b.id !== 'def_bunker');
+      case 'military':
+        return all.filter((b) => b.category === 'military' || b.category === 'research');
     }
   };
 
@@ -117,14 +137,12 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
   const currentBuildings = getTabBuildings(activeTab);
 
   return (
-    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2.5 select-none pointer-events-auto">
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 select-none pointer-events-auto">
       {/* Compact Active Placement Helper Pill */}
       {activeBuildingType && (
         <div className="bg-[#101c2e]/95 backdrop-blur-md px-4 py-2 rounded-2xl border border-sky-400/40 shadow-xl flex items-center gap-3 animate-fade-in text-xs text-white">
           <span className="w-2 h-2 rounded-full bg-sky-400" />
-          <span className="font-semibold">
-            {BUILDING_DEFS[activeBuildingType].name}
-          </span>
+          <span className="font-semibold">{BUILDING_DEFS[activeBuildingType].name}</span>
           {activeBuildingType.startsWith('road_') && (
             <span className="text-sky-300 text-[11px] bg-sky-500/15 px-2 py-0.5 rounded-lg border border-sky-400/25">
               {engine.placement.roadStartNode
@@ -185,9 +203,7 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
                       <span>Locked</span>
                     </div>
                   )}
-                  <div className="font-semibold text-xs text-white truncate">
-                    {def.name}
-                  </div>
+                  <div className="font-semibold text-xs text-white truncate">{def.name}</div>
                   <div className="flex items-center justify-between text-[11px] mt-1">
                     <span className={`font-bold ${canAfford ? 'text-emerald-400' : 'text-rose-400'}`}>
                       ${def.cost.toLocaleString()}
@@ -200,8 +216,8 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
               );
             })}
 
-            {/* On-demand Tactical Actions inside the Defense Tab */}
-            {activeTab === 'defense' && (
+            {/* On-demand Tactical Actions inside the Defense & Military Tabs */}
+            {(activeTab === 'defense' || activeTab === 'military') && (
               <>
                 <div className="h-10 w-px bg-white/10 mx-1 shrink-0" />
                 <button
@@ -215,9 +231,7 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
                     <Radar className="w-3.5 h-3.5" />
                     <span>Test Air Defense</span>
                   </div>
-                  <span className="text-[10px] text-amber-200/80 mt-0.5">
-                    Spawn Target Drone
-                  </span>
+                  <span className="text-[10px] text-amber-200/80 mt-0.5">Spawn Target Drone</span>
                 </button>
 
                 <button
@@ -231,9 +245,7 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
                     <Crosshair className="w-3.5 h-3.5" />
                     <span>Strike Missions</span>
                   </div>
-                  <span className="text-[10px] text-rose-200/80 mt-0.5">
-                    Offensive Operations
-                  </span>
+                  <span className="text-[10px] text-rose-200/80 mt-0.5">Offensive Operations</span>
                 </button>
 
                 <button
@@ -247,9 +259,7 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
                     <FlaskConical className="w-3.5 h-3.5" />
                     <span>Tech Tree</span>
                   </div>
-                  <span className="text-[10px] text-sky-200/80 mt-0.5">
-                    Upgrades & Perks
-                  </span>
+                  <span className="text-[10px] text-sky-200/80 mt-0.5">Upgrades & Perks</span>
                 </button>
 
                 <button
@@ -263,9 +273,7 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
                     <ScrollText className="w-3.5 h-3.5 text-sky-400" />
                     <span>Combat Log</span>
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-0.5">
-                    Toggle Events
-                  </span>
+                  <span className="text-[10px] text-slate-400 mt-0.5">Toggle Events</span>
                 </button>
               </>
             )}
@@ -273,8 +281,8 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
         </div>
       )}
 
-      {/* Main Bottom Construction Dock (Matches Reference Image 5-Button Toolbar) */}
-      <div className="bg-[#101c2e]/92 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-2">
+      {/* Main Bottom Construction Dock (Matches Reference Image 7-Button Toolbar) */}
+      <div className="bg-[#101c2e]/92 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-1.5">
         {tabs.map((tab) => {
           const isActive =
             activeTab === tab.id &&
@@ -286,14 +294,14 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
             <button
               key={tab.id}
               onClick={() => handleTabClick(tab.id)}
-              className={`w-24 py-2.5 px-3 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all ${
+              className={`w-[96px] py-2 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-all ${
                 highlighted
-                  ? 'bg-[#1a3353] border-2 border-[#38bdf8] text-white shadow-[0_0_16px_rgba(56,189,248,0.3)]'
+                  ? 'bg-[#1a3353] border-2 border-[#38bdf8] text-white shadow-[0_0_16px_rgba(56,189,248,0.28)]'
                   : 'border-2 border-transparent text-slate-200 hover:text-white hover:bg-white/5'
               }`}
             >
               {tab.icon}
-              <span className="text-xs font-medium tracking-wide">{tab.label}</span>
+              <span className="text-[11px] font-medium tracking-wide">{tab.label}</span>
             </button>
           );
         })}

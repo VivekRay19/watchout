@@ -7,35 +7,45 @@ export class EconomyManager {
 
   constructor() {
     this.state = {
-      treasury: 50000,
-      hourlyTax: 2450,
-      hourlyExpenses: 450,
-      netIncome: 2000,
-      population: 1240,
-      maxHousing: 1480,
-      jobsAvailable: 960,
-      jobsFilled: 868,
-      employmentRate: 92,
+      treasury: 25680,
+      hourlyTax: 3120,
+      hourlyExpenses: 640,
+      netIncome: 2480,
+      population: 4320,
+      maxHousing: 4950,
+      jobsAvailable: 3420,
+      jobsFilled: 3180,
+      employmentRate: 93,
       approvalRating: 92,
-      steel: 180,
-      concrete: 240,
-      electronics: 85,
-      militarySupplies: 65,
-      powerGenerated: 185,
-      powerConsumed: 158,
-      waterSupplied: 160,
-      waterConsumed: 147,
-      militaryReadiness: 88,
+      steel: 220,
+      concrete: 290,
+      electronics: 110,
+      militarySupplies: 85,
+      powerGenerated: 380,
+      powerConsumed: 296,
+      waterSupplied: 320,
+      waterConsumed: 294,
+      militaryReadiness: 92,
       threatLevel: 'MINIMAL',
+      residentialDemand: 68,
+      commercialDemand: 54,
+      industrialDemand: 48,
+      pollutionLevel: 16,
+      trafficCongestion: 18,
     };
   }
 
-  public tick(buildings: PlacedBuilding[], techTree: TechNode[], deltaSeconds: number) {
+  public tick(
+    buildings: PlacedBuilding[],
+    techTree: TechNode[],
+    deltaSeconds: number,
+    liveTrafficCongestion = 18
+  ) {
     // 1. Calculate Utilities
     const util = UtilityGrid.calculate(buildings);
-    this.state.powerGenerated = Math.max(100, util.powerGenerated);
+    this.state.powerGenerated = Math.max(120, util.powerGenerated);
     this.state.powerConsumed = Math.max(40, util.powerConsumed);
-    this.state.waterSupplied = Math.max(100, util.waterSupplied);
+    this.state.waterSupplied = Math.max(120, util.waterSupplied);
     this.state.waterConsumed = Math.max(40, util.waterConsumed);
 
     const hasUrbanPlanning = techTree.find((t) => t.id === 'urban_planning' && t.unlocked);
@@ -46,28 +56,51 @@ export class EconomyManager {
 
     let maxHousing = 0;
     let jobsCapacity = 0;
+    let commercialJobs = 0;
+    let industrialJobs = 0;
     let totalExpenses = 0;
     let activeRadars = 0;
     let activeSams = 0;
     let activeAirbases = 0;
     let damagedCount = 0;
+    let pollutionPoints = 0;
+    let parkPoints = 0;
+    let hospitalCount = 0;
 
     buildings.forEach((b) => {
       if (b.health < b.maxHealth) damagedCount++;
       const def = BUILDING_DEFS[b.type];
       totalExpenses += def.maintenance;
 
-      if (!b.active || b.health <= 0) return;
+      // Buildings under construction or destroyed do not contribute capacity/output yet
+      if (!b.active || b.health <= 0 || b.isConstructing) return;
+
+      const healthFactor = Math.max(0.25, b.health / b.maxHealth);
+      const utilityFactor = b.powered && b.watered ? 1.0 : b.powered || b.watered ? 0.6 : 0.25;
+      const efficiency = healthFactor * utilityFactor;
 
       if (def.populationCapacity) {
-        maxHousing += Math.round(def.populationCapacity * housingBonus);
+        maxHousing += Math.round(def.populationCapacity * housingBonus * efficiency);
       }
       if (def.jobsCapacity) {
-        jobsCapacity += def.jobsCapacity;
+        const effJobs = Math.round(def.jobsCapacity * efficiency);
+        jobsCapacity += effJobs;
+        if (def.category === 'commercial') commercialJobs += effJobs;
+        if (def.category === 'industrial') industrialJobs += effJobs;
+      }
+
+      if (b.type === 'ind_factory' || b.type === 'util_power_plant') {
+        pollutionPoints += 9;
+      } else if (b.type === 'ind_warehouse') {
+        pollutionPoints += 4;
+      } else if (b.type === 'def_bunker') {
+        parkPoints += 12;
+      } else if (b.type === 'serv_hospital') {
+        hospitalCount++;
       }
 
       if (b.powered && def.productionType && def.productionRate) {
-        const prod = (def.productionRate * prodBonus * deltaSeconds) / 10;
+        const prod = (def.productionRate * prodBonus * efficiency * deltaSeconds) / 10;
         if (def.productionType === 'steel') this.state.steel += prod;
         if (def.productionType === 'concrete') this.state.concrete += prod;
         if (def.productionType === 'electronics') this.state.electronics += prod;
@@ -80,27 +113,51 @@ export class EconomyManager {
       if (b.type === 'mil_barracks' && b.powered) this.state.militarySupplies += 0.5 * deltaSeconds;
     });
 
-    this.state.maxHousing = Math.max(1240, maxHousing);
-    this.state.jobsAvailable = Math.max(600, jobsCapacity);
+    this.state.maxHousing = Math.max(4400, maxHousing * 3);
+    this.state.jobsAvailable = Math.max(2600, jobsCapacity * 3);
+    this.state.pollutionLevel = Math.max(4, Math.min(100, pollutionPoints - parkPoints + 8));
+    this.state.trafficCongestion = liveTrafficCongestion;
+
+    // 2. Zone Demands (Residential / Commercial / Industrial)
+    const housingRatio = this.state.population / Math.max(1, this.state.maxHousing);
+    this.state.residentialDemand = Math.round(
+      Math.max(15, Math.min(95, housingRatio * 75 + (this.state.approvalRating - 65) * 0.6))
+    );
+    this.state.commercialDemand = Math.round(
+      Math.max(15, Math.min(95, 85 - (commercialJobs * 3) / Math.max(1, this.state.population * 0.015)))
+    );
+    this.state.industrialDemand = Math.round(
+      Math.max(15, Math.min(95, 80 - (industrialJobs * 3) / Math.max(1, this.state.population * 0.015)))
+    );
 
     // 3. Population Growth Model
     if (this.state.population < this.state.maxHousing) {
-      const growthRate = (this.state.approvalRating / 100) * 2.5 * deltaSeconds;
-      this.state.population = Math.min(this.state.maxHousing, Math.round(this.state.population + growthRate));
+      const growthRate = (this.state.approvalRating / 100) * 3.2 * deltaSeconds;
+      this.state.population = Math.min(
+        this.state.maxHousing,
+        Math.round(this.state.population + growthRate)
+      );
     } else if (this.state.population > this.state.maxHousing) {
       this.state.population = Math.max(0, Math.round(this.state.population - 2 * deltaSeconds));
     }
 
     // 4. Employment & Jobs
-    this.state.jobsFilled = Math.min(this.state.jobsAvailable, Math.round(this.state.population * 0.75));
+    this.state.jobsFilled = Math.min(
+      this.state.jobsAvailable,
+      Math.round(this.state.population * 0.74)
+    );
     this.state.employmentRate =
       this.state.jobsAvailable > 0
-        ? Math.min(100, Math.round((this.state.jobsFilled / Math.max(1, this.state.population * 0.75)) * 100))
+        ? Math.min(
+            100,
+            Math.round((this.state.jobsFilled / Math.max(1, this.state.population * 0.74)) * 100)
+          )
         : 100;
 
-    // 5. Taxation & Revenue
-    const citizenTax = Math.round(this.state.population * 1.15);
-    const commercialTax = Math.round(this.state.jobsFilled * 1.25);
+    // 5. Taxation & Revenue (impacted by congestion & approval)
+    const congestionPenalty = this.state.trafficCongestion > 65 ? 0.88 : 1.0;
+    const citizenTax = Math.round(this.state.population * 0.42 * congestionPenalty);
+    const commercialTax = Math.round(this.state.jobsFilled * 0.44 * congestionPenalty);
     this.state.hourlyTax = citizenTax + commercialTax;
     this.state.hourlyExpenses = totalExpenses;
     this.state.netIncome = this.state.hourlyTax - this.state.hourlyExpenses;
@@ -108,11 +165,13 @@ export class EconomyManager {
     this.state.treasury += (this.state.netIncome * deltaSeconds) / 12;
 
     // 6. Citizen Approval Rating
-    let happiness = 92;
-    if (util.powerSurplus < 0) happiness -= 25;
-    if (util.waterSurplus < 0) happiness -= 20;
-    if (damagedCount > 0) happiness -= Math.min(30, damagedCount * 8);
-    if (this.state.employmentRate < 60) happiness -= 15;
+    let happiness = 90 + Math.min(8, hospitalCount * 3) + Math.min(6, Math.floor(parkPoints / 6));
+    if (util.powerSurplus < 0) happiness -= 22;
+    if (util.waterSurplus < 0) happiness -= 18;
+    if (damagedCount > 0) happiness -= Math.min(28, damagedCount * 7);
+    if (this.state.pollutionLevel > 45) happiness -= Math.round((this.state.pollutionLevel - 45) * 0.35);
+    if (this.state.trafficCongestion > 60) happiness -= 8;
+    if (this.state.employmentRate < 60) happiness -= 14;
     this.state.approvalRating = Math.max(10, Math.min(100, happiness));
 
     // 7. Military Readiness
@@ -124,11 +183,11 @@ export class EconomyManager {
     this.state.militaryReadiness = Math.min(100, readiness);
 
     // 8. Threat Level
-    if (this.state.population > 2200) {
+    if (this.state.population > 6200) {
       this.state.threatLevel = 'CRITICAL';
-    } else if (this.state.population > 1600) {
+    } else if (this.state.population > 5200) {
       this.state.threatLevel = 'HIGH';
-    } else if (this.state.population > 1350) {
+    } else if (this.state.population > 4600) {
       this.state.threatLevel = 'ELEVATED';
     } else {
       this.state.threatLevel = 'MINIMAL';

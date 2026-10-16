@@ -2,47 +2,37 @@
 
 All notable changes to **WATCH OUT** are documented in this file.
 
+## [2.1.0] - 2026-10-16 — Living World, Graphics, Animation & Gameplay Upgrade
+
+### 1. Terrain, Shoreline & Living Water Upgrade
+- **Rolling Hills & Elevation Variation**: Added sculpted northern and western hills with smooth vertex-blended transitions between meadow grass, warm soil, golden sand, coastal rock, and hillside forest.
+- **Coastal Islets & Twin Lighthouses**: Added two rocky islets in the right bay topped with red-and-white striped coastal lighthouses and rotating beacon beams.
+- **Animated River & Bay Water**: Upgraded the water surface to a high-resolution vertex-animated wave mesh with depth-shaded turquoise-to-azure coloring, subtle shoreline foam strips, and animated V-shaped wakes behind moving ships.
+
+### 2. Architectural Variation & Staged Construction
+- **Multi-Variant Low-Poly Buildings**:
+  - **Residential**: 4 distinct suburban home variants (`res_low`) with varied heights, roof shapes, pastel facades, fences, driveways, and garden bushes, plus 3 mid-rise apartment variants (`res_suburb`) with balconies and rotating rooftop HVAC fans.
+  - **Commercial**: 3 shop variants (`com_retail`) with striped awnings and parking spaces, shopping plaza (`com_mall`), and sleek glass office towers (`com_skyscraper`).
+  - **Industrial**: Upgraded factory complex (`ind_factory`) featuring spherical refinery gas-holder domes, twin red-and-white striped smokestacks, and an animated rotating yellow jib crane; logistics warehouse (`ind_warehouse`) with loading bays and rotating crane.
+  - **Military & Airbase**: Full tactical airbase (`mil_airbase`) with asphalt runway, threshold markings, edge lights, 3 arched aircraft hangars, air-traffic control tower with rotating radar, and 2 red-and-white lattice radio masts.
+- **Staged Building Construction & Repair**: Newly placed buildings progress through foundation, structural framing with scaffolding, and completed operational stages with real-time progress visible in the Building Inspector.
+
+### 3. Event-Driven World Animation & Traffic Simulation
+- **Dedicated `AnimationSystem`**: Centralizes simulation-bound animations (wind-swaying instanced trees via GPU vertex shader, rotating radars, rooftop HVAC fans, industrial jib cranes, park fountain spray, lighthouse beams, factory smoke, cooling tower steam, and moving container cargo ships). All animations respect simulation pause/speed and building power/operational status.
+- **Route-Finding Traffic & Intersection Signals**: Upgraded `TrafficSystem` and `RoadSystem` with 6 vehicle types (sedans, yellow taxis, delivery vans, cargo trucks, city buses, military trucks) featuring spinning wheels, BFS shortest-path routing across connected road nodes, safe following distances, and working red/green traffic signals at multi-way intersections.
+- **Smooth Day/Night Cycle & Economy Depth**: Continuous Sunrise, Day, Sunset, and Night lighting transitions synchronized with building window lights, streetlights, runway lights, and vehicle headlights; added Residential/Commercial/Industrial zone demand, pollution, and traffic congestion modeling.
+
+### 4. Refined Interface Layout
+- **Top-Left Getting Started Card**: Relocated `TutorialCard` below the top-left brand emblem with a `"Show Tips"` expandable drawer so it never overlaps the bottom toolbar.
+- **Interactive Top-Right Minimap**: Added a live canvas `Minimap` with terrain, water, road network, building markers, vessels, threat blips, camera viewport box, and click-to-pan navigation.
+- **7-Category Construction Dock**: Expanded the bottom toolbar to `Roads`, `Residential`, `Commercial`, `Industrial`, `Infrastructure`, `Defense`, and `Military`.
+
+---
+
 ## [2.0.0] - 2026-10-16 — Clean, Colorful Isometric City-Builder Redesign
-
-### 1. Art Direction & Visual Overhaul
-- **Isometric Camera & Readable City Blocks**: Switched to a narrow-FOV (26°) isometric camera projection with clear depth, parallel street lines, and smooth pan/zoom/orbit navigation.
-- **Bright, Cohesive Palette**: Redesigned terrain, water, roads, and buildings around a sunlit palette of azure/turquoise water, golden sandy beaches, vibrant spring meadow greens, soft slate-grey roads, and pastel architectural materials.
-- **Smooth Sculpted Terrain**: Eliminated noisy procedural ground grain textures and uneven bumps in favor of a flat, smooth central peninsula and eastern bank separated by a river channel and coastal harbor bay, framed by sculpted rocky hills.
-- **Simple, Elegant Low-Poly 3D Models**:
-  - **Residential**: Cozy pastel homes with coral-red, cerulean-blue, and warm-orange pitched roofs, fenced yards, and mid-rise pastel apartment blocks.
-  - **Commercial & Civic**: Colorful red, yellow, and white storefronts, sleek azure-blue glass office towers with crisp white mullions, a central park with a circular fountain and cherry-blossom trees, and a white-and-turquoise hospital with a rooftop helipad.
-  - **Industrial & Harbor**: Clean manufacturing factory with a red-and-white striped smokestack, logistics warehouse, waterfront harbor pier with stacked colorful shipping containers, red gantry crane, and moored yacht/corvette.
-  - **Military & Air Defense**: Fenced defense compound featuring a white spherical radome ("golf ball") radar tower on a tapered support structure, olive-green 8x8 SAM launcher trucks, and a northern tactical airbase.
-- **Varied Low-Poly Trees**: Layered forest-green conifers on hills, plump rounded deciduous trees along streets, and pastel-pink cherry blossom trees in parks and plazas.
-
-### 2. Genuinely Connected Roads & Intersections
-- **Mid-Segment T-Junction Splitting**: Clicking on the middle of any existing road segment automatically splits the segment and inserts a shared `RoadNode` so T-junctions are topologically and visually connected.
-- **Automatic 4-Way Crossroads**: Drawing a road across an existing road automatically detects the intersection point, splits both segments, and links all four arms into a unified intersection node.
-- **Clean Trimmed Road Geometry**: Curbs and dashed white centerlines trim back cleanly at intersections, replaced by flush asphalt junction hubs, corner sidewalk fillets, and white zebra crosswalks without z-fighting.
-- **Right-Hand Lane Traffic**: Colorful low-poly sedans and delivery trucks drive in their proper right-hand lanes across connected streets and bridges.
-
-### 3. Authoritative Air-Defense Simulation
-- **Noise-Free Coverage Rings**: Radar and SAM range rings stay hidden during peaceful city building and appear only when placing/inspecting defense assets or during active threat alerts.
-- **Full Detection-to-Interception Loop**: Radars and SAM batteries detect incoming aerial threats, smoothly aim their 3D turrets in azimuth and pitch, draw subtle target-lock lines, launch visible white-and-orange interceptor missiles, and resolve mid-air engagements via swept-segment collision detection.
-- **One-Click Air Defense Drill**: Added a "Test Air Defense" action in the Defense toolbar and onboarding tutorial to spawn a live target drone at any time.
-
-### 4. Streamlined, Minimalist UI Design
-- **Compact Top Bar**: Displays the WATCH OUT brand emblem, essential resources (`$50,000` treasury, `1,240` population, `85%` power, `92%` water), date/time (`Apr 14, 2025 10:30 AM`), simulation speed controls (`Pause`, `Play`, `Fast`), and a clean Settings button.
-- **Single Friendly Tutorial Card**: Compact bottom-left onboarding card featuring a construction engineer avatar and concise step-by-step guidance.
-- **Simple 5-Button Bottom Toolbar**: Clean bottom dock (`Roads`, `Residential`, `Commercial`, `Industry`, `Defense`) with sky-blue active highlighting and on-demand building trays.
-- **Progressive Disclosure**: Advanced military panels, tech research, detailed statistics, and combat logs stay hidden until opened by the player.
+- Redesigned WATCH OUT around a clean, colorful low-poly isometric city-builder aesthetic with connected road snapping/splitting, authoritative air-defense interception, and a compact UI.
 
 ---
 
 ## [1.2.0] - 2026-10-15 — Major Graphics, UI/UX, Road System and Air Defense Overhaul
 - Added multi-octave terrain, two-point road drawing, air-defense state machine, and 7-step tutorial.
-
----
-
-## [1.1.0] - 2026-10-15
-- Initial 3D city-builder and air-defense simulation systems.
-
----
-
-## [1.0.0] - 2026-10-15
-- Initial project scaffolding and prototype architecture.

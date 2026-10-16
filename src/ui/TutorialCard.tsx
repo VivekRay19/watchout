@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { GameEngine } from '../engine/GameEngine';
-import { ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react';
 import { soundManager } from '../audio/SoundManager';
 
 interface TutorialCardProps {
@@ -10,13 +10,14 @@ interface TutorialCardProps {
 
 export type TutorialStep = 1 | 2 | 3 | 4 | 5 | 6; // 6 = finished
 
-const TUTORIAL_STORAGE_KEY = 'watchout_tutorial_v2';
+const TUTORIAL_STORAGE_KEY = 'watchout_tutorial_v2_1';
 
 export const TutorialCard: React.FC<TutorialCardProps> = ({ engine, onOpenMilitary }) => {
   const [currentStep, setCurrentStep] = useState<TutorialStep>(() => {
     const saved = localStorage.getItem(TUTORIAL_STORAGE_KEY);
     return saved ? (parseInt(saved, 10) as TutorialStep) : 1;
   });
+  const [showTips, setShowTips] = useState(false);
   const [initialRoadsCount] = useState(() => engine.roadSystem.segments.size);
   const [initialBuildingsCount] = useState(() => engine.buildings.length);
   const [drillTriggered, setDrillTriggered] = useState(false);
@@ -34,9 +35,10 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({ engine, onOpenMilita
           advanceStep();
         }
       } else if (currentStep === 3) {
-        const hasNewDef = engine.buildings.filter(
-          (b) => b.type === 'def_sam_battery' || b.type === 'def_radar' || b.type === 'def_ciws'
-        ).length > 3;
+        const hasNewDef =
+          engine.buildings.filter(
+            (b) => b.type === 'def_sam_battery' || b.type === 'def_radar' || b.type === 'def_ciws'
+          ).length > 3;
         if (hasNewDef) {
           advanceStep();
         }
@@ -68,8 +70,8 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({ engine, onOpenMilita
 
   const steps: Record<number, { title: string; desc: string; onAction: () => void }> = {
     1: {
-      title: 'Build your first road',
-      desc: 'Select the Roads tool and draw a road to connect this area.',
+      title: 'Getting Started',
+      desc: 'Welcome! Build roads to connect zones and grow your city.',
       onAction: () => {
         soundManager.playClick();
         if (!engine.placement.activeBuildingType?.startsWith('road_')) {
@@ -81,38 +83,38 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({ engine, onOpenMilita
       },
     },
     2: {
-      title: 'Expand your neighborhood',
-      desc: 'Choose Residential or Commercial and place a building along a road.',
+      title: 'Expand Your City',
+      desc: 'Choose Residential or Commercial and place a building along a connected road.',
       onAction: () => {
         soundManager.playClick();
         advanceStep();
       },
     },
     3: {
-      title: 'Strengthen air defense',
-      desc: 'Open Defense to add a Radar Tower or SAM Battery to protect the city.',
+      title: 'Strengthen Air Defense',
+      desc: 'Open Defense to place a Radar Tower or SAM Battery to protect the coastline.',
       onAction: () => {
         soundManager.playClick();
         advanceStep();
       },
     },
     4: {
-      title: 'Test air-defense interception',
-      desc: 'Click the arrow to launch a target drone and watch your SAM battery intercept it.',
+      title: 'Test Air Interception',
+      desc: 'Click Next to launch a target drone and watch your SAM battery intercept it.',
       onAction: () => {
         soundManager.playClick();
         if (!drillTriggered) {
           setDrillTriggered(true);
           const threat = engine.triggerAirDefenseDrill();
-          engine.world.focusOn(threat.targetX, threat.targetZ, 120);
+          engine.world.focusOn(threat.targetX, threat.targetZ, 125);
         } else {
           advanceStep();
         }
       },
     },
     5: {
-      title: 'Launch a strike mission',
-      desc: 'Open Defense and launch a reconnaissance flight from your airbase.',
+      title: 'Launch Strike Mission',
+      desc: 'Open Military and launch a reconnaissance flight from your airbase.',
       onAction: () => {
         soundManager.playClick();
         onOpenMilitary?.();
@@ -124,45 +126,54 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({ engine, onOpenMilita
   const step = steps[currentStep] || steps[1];
 
   return (
-    <div className="fixed bottom-5 left-5 z-20 bg-[#101c2e]/92 backdrop-blur-md rounded-2xl p-3.5 pr-4 border border-white/10 shadow-2xl flex items-center gap-3.5 w-[355px] max-w-[90vw] select-none pointer-events-auto animate-fade-in">
-      {/* Friendly Construction Engineer Avatar with Yellow Hard Hat */}
-      <div className="w-12 h-12 rounded-xl bg-sky-500/15 border border-sky-400/25 flex items-center justify-center shrink-0 overflow-hidden">
-        <svg viewBox="0 0 64 64" className="w-11 h-11">
-          {/* Shoulders / Orange Safety Vest */}
-          <path d="M12 60 C12 46 52 46 52 60 Z" fill="#f97316" />
-          <path d="M24 48 L28 60 L36 60 L40 48 Z" fill="#fef08a" />
-          {/* Neck & Face */}
-          <rect x="27" y="38" width="10" height="8" rx="3" fill="#f6c492" />
-          <circle cx="32" cy="30" r="11" fill="#fbd3a7" />
-          {/* Eyes & Warm Smile */}
-          <circle cx="28" cy="29" r="1.5" fill="#1e293b" />
-          <circle cx="36" cy="29" r="1.5" fill="#1e293b" />
-          <path d="M28 34 Q32 37 36 34" stroke="#1e293b" strokeWidth="1.8" fill="none" strokeLinecap="round" />
-          {/* Yellow Hard Hat */}
-          <path d="M19 24 C19 13 45 13 45 24 Z" fill="#facc15" />
-          <rect x="16" y="22" width="32" height="4" rx="2" fill="#eab308" />
-          <rect x="29" y="13" width="6" height="9" rx="1.5" fill="#fef08a" />
-        </svg>
-      </div>
-
-      {/* Text Content */}
-      <div className="flex-1 min-w-0">
-        <div className="font-bold text-white text-sm leading-snug truncate">
-          {step.title}
+    <div className="fixed top-20 left-5 z-20 bg-[#101c2e]/92 backdrop-blur-md rounded-2xl p-3.5 border border-white/12 shadow-2xl w-[320px] max-w-[88vw] select-none pointer-events-auto animate-fade-in">
+      {/* Header Row: Amber ! Icon + Getting Started + Step Counter */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-full bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shadow-sm">
+            !
+          </div>
+          <span className="font-bold text-white text-sm tracking-tight">{step.title}</span>
         </div>
-        <p className="text-xs text-slate-300 leading-snug mt-0.5 line-clamp-2">
-          {step.desc}
-        </p>
+        <span className="text-xs font-semibold text-slate-300 bg-white/10 px-2 py-0.5 rounded-lg">
+          {currentStep - 1}/1
+        </span>
       </div>
 
-      {/* Action / Next Arrow Button */}
-      <button
-        onClick={step.onAction}
-        className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 flex items-center justify-center text-white shrink-0 transition-colors"
-        title="Continue"
-      >
-        <ChevronRight className="w-4 h-4" />
-      </button>
+      {/* Description */}
+      <p className="text-xs text-slate-200 leading-relaxed mt-2">{step.desc}</p>
+
+      {/* Expandable Tips Drawer */}
+      {showTips && (
+        <div className="mt-2.5 pt-2.5 border-t border-white/10 text-[11px] text-slate-300 space-y-1.5">
+          <div>• Click any road node or road segment to snap T-junctions and crossroads.</div>
+          <div>• Keep Power & Water above 70% so factories and radars operate at full speed.</div>
+          <div>• Click any building to inspect construction progress, health, or radar range.</div>
+        </div>
+      )}
+
+      {/* Footer Actions: Show Tips + Next Step */}
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <button
+          onClick={() => {
+            soundManager.playClick();
+            setShowTips((v) => !v);
+          }}
+          className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 border border-white/10 text-slate-200 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors"
+        >
+          <span>Show Tips</span>
+          {showTips ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+
+        <button
+          onClick={step.onAction}
+          className="flex items-center gap-1 bg-sky-500/25 hover:bg-sky-500/35 border border-sky-400/40 text-sky-200 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors"
+          title="Next Step"
+        >
+          <span>Next</span>
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 };

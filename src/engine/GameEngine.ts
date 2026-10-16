@@ -21,6 +21,7 @@ import { ThreatSystem } from './ThreatSystem';
 import { EnemyFaction } from './EnemyFaction';
 import { MissionSystem } from './MissionSystem';
 import { ParticleSystem } from './ParticleSystem';
+import { AnimationSystem } from './AnimationSystem';
 import { EconomyManager } from '../simulation/EconomyManager';
 import { INITIAL_TECH_TREE } from '../simulation/TechTree';
 import { SaveLoadManager } from '../simulation/SaveLoadManager';
@@ -41,6 +42,7 @@ export class GameEngine {
   public enemyFaction: EnemyFaction;
   public missionSystem: MissionSystem;
   public particleSystem: ParticleSystem;
+  public animationSystem: AnimationSystem;
   public economy: EconomyManager;
 
   // Game state
@@ -59,7 +61,7 @@ export class GameEngine {
     ambienceVolume: 0.35,
     graphicsQuality: 'HIGH',
     shadowsEnabled: true,
-    timeOfDay: 10.5,
+    timeOfDay: 10.4,
     dayCycleSpeed: 0.015,
   };
 
@@ -78,13 +80,20 @@ export class GameEngine {
     // 1. Core World Systems
     this.terrain = new TerrainGenerator(600, 600, 200);
     this.world = new WorldManager(canvas, this.terrain);
-    this.vegetation = new VegetationSystem(this.terrain, 2400);
+    this.vegetation = new VegetationSystem(this.terrain, 2600);
     this.buildingRenderer = new BuildingRenderer();
     this.placement = new PlacementSystem(this.terrain, this.vegetation);
     this.roadSystem = new RoadSystem(this.terrain);
     this.trafficSystem = new TrafficSystem(this.roadSystem);
     this.airTraffic = new AirTrafficSystem(this.buildingRenderer);
     this.particleSystem = new ParticleSystem();
+    this.animationSystem = new AnimationSystem(
+      this.buildingRenderer,
+      this.terrain,
+      this.particleSystem,
+      this.vegetation,
+      this.roadSystem
+    );
     this.defenseSystem = new DefenseSystem(this.buildingRenderer, this.particleSystem);
     this.threatSystem = new ThreatSystem(this.particleSystem);
     this.enemyFaction = new EnemyFaction(this.terrain);
@@ -94,10 +103,12 @@ export class GameEngine {
     // Assemble Three.js scene hierarchy
     this.world.scene.add(this.terrain.mesh);
     this.world.scene.add(this.terrain.waterMesh);
+    this.world.scene.add(this.terrain.foamGroup);
     this.world.scene.add(this.vegetation.group);
     this.world.scene.add(this.roadSystem.group);
     this.world.scene.add(this.trafficSystem.group);
     this.world.scene.add(this.airTraffic.group);
+    this.world.scene.add(this.animationSystem.group);
     this.world.scene.add(this.particleSystem.group);
     this.world.scene.add(this.defenseSystem.group);
     this.world.scene.add(this.threatSystem.group);
@@ -109,6 +120,7 @@ export class GameEngine {
     this.initEventListeners();
     this.loadOrSetupStarterCity();
     this.world.update(0.016, false);
+    this.animationSystem.update(0.016, this.buildings, this.buildingMeshes, this.world.nightFactor);
     this.world.renderer.render(this.world.scene, this.world.camera);
     (window as unknown as { __watchoutEngine?: GameEngine }).__watchoutEngine = this;
     this.startLoop();
@@ -119,7 +131,6 @@ export class GameEngine {
       soundManager.init();
 
       if (e.button !== 0) return;
-      // Ignore click if user was dragging the camera
       if (this.world.wasDragging) return;
 
       if (this.placement.activeBuildingType) {
@@ -182,7 +193,13 @@ export class GameEngine {
       saved.buildings.forEach((b) => {
         this.instantiateBuildingMesh(b);
         if (b.type === 'mil_airbase') {
-          this.airTraffic.registerAirbase(b.id, b.x, this.terrain.getHeight(b.x, b.z), b.z, b.rotation);
+          this.airTraffic.registerAirbase(
+            b.id,
+            b.x,
+            this.terrain.getHeight(b.x, b.z),
+            b.z,
+            b.rotation
+          );
         }
       });
       this.buildings = saved.buildings;
@@ -192,12 +209,12 @@ export class GameEngine {
       this.setupStarterCity();
     }
 
-    this.trafficSystem.seedTraffic(24);
+    this.trafficSystem.seedTraffic(28);
     this.defenseSystem.updateRadarCoverageRings(this.buildings);
   }
 
   private setupStarterCity() {
-    // 1. Build a crisp, connected city block grid and coastal/river bridges
+    // 1. Build a crisp, connected city block grid and river/coastal highway bridges
     const xCols = [-48, -24, 0, 24, 44];
     const zRows = [-36, -12, 12, 34];
     const gridNodes: Record<string, RoadNode> = {};
@@ -236,68 +253,72 @@ export class GameEngine {
       }
     }
 
-    // Eastern Defense & Medical District across the River Channel (connected by bridges!)
-    const eastN1 = this.roadSystem.addNode(84, -36);
-    const eastN2 = this.roadSystem.addNode(84, -12);
-    const eastN3 = this.roadSystem.addNode(84, 12);
-    const eastN4 = this.roadSystem.addNode(84, 34);
+    // Eastern Airbase & Defense District across the River Channel (connected by multi-pier bridges)
+    const eastN1 = this.roadSystem.addNode(82, -36);
+    const eastN2 = this.roadSystem.addNode(82, -12);
+    const eastN3 = this.roadSystem.addNode(82, 12);
 
-    // Upper & Central River Bridges
-    connectRoad(gridNodes['44_-36'], eastN1, 'road_bridge');
+    // Main Central River Highway Bridge + Northern Bridge
     connectRoad(gridNodes['44_-12'], eastN2, 'road_bridge');
-    // Lower Coastal Highway Bridge over the Bay
-    connectRoad(gridNodes['44_34'], eastN4, 'road_bridge');
+    connectRoad(gridNodes['44_-36'], eastN1, 'road_bridge');
     // East Bank Avenue
     connectRoad(eastN1, eastN2, 'road_two_lane');
     connectRoad(eastN2, eastN3, 'road_two_lane');
-    connectRoad(eastN3, eastN4, 'road_two_lane');
 
-    // 2. Starter Buildings (Cohesive, colorful neighborhoods, park, harbor, and defense base)
-    const starterList: { id?: string; type: BuildingType; x: number; z: number }[] = [
-      // Central Park with Fountain & Cherry Blossoms
-      { id: 'bld_init_park', type: 'def_bunker', x: 12, z: 22 },
+    // 2. Starter Buildings (Matching reference layout: Industrial NW, Central Park & City, Harbor S, Airbase & Radar NE)
+    const starterList: {
+      id?: string;
+      type: BuildingType;
+      x: number;
+      z: number;
+      variant?: number;
+    }[] = [
+      // Central Park with Tiered Fountain & Cherry Blossoms
+      { id: 'bld_init_park', type: 'def_bunker', x: 12, z: 0, variant: 0 },
 
-      // Cozy Pastel Suburban Homes (paired nicely inside city blocks)
-      { type: 'res_low', x: -16, z: -26 },
-      { type: 'res_low', x: -8, z: -20 },
-      { type: 'res_low', x: 8, z: -26 },
-      { type: 'res_low', x: 16, z: -20 },
-      { type: 'res_low', x: -16, z: -2 },
-      { type: 'res_low', x: -8, z: 4 },
-      { type: 'res_low', x: -38, z: -26 },
-      { type: 'res_low', x: -30, z: -20 },
-      { type: 'res_low', x: -16, z: 20 },
-      { type: 'res_low', x: -8, z: 26 },
+      // Top-Left Industrial Refinery & Factory Complex (with Spherical Gas Holders, Striped Smokestacks & Yellow Cranes)
+      { type: 'ind_factory', x: -36, z: -24, variant: 0 },
+      { type: 'ind_warehouse', x: -36, z: -2, variant: 1 },
+      { type: 'util_power_plant', x: -58, z: -24, variant: 0 },
+      { type: 'ind_factory', x: -58, z: -4, variant: 1 },
 
-      // Mid-Rise Pastel Apartments
-      { type: 'res_suburb', x: -36, z: 0 },
-      { type: 'res_suburb', x: -36, z: 22 },
-      { type: 'res_suburb', x: 12, z: -2 },
+      // Cozy Pastel Suburban Homes (4 distinct architectural variants across blocks)
+      { type: 'res_low', x: -16, z: -26, variant: 0 },
+      { type: 'res_low', x: -8, z: -20, variant: 1 },
+      { type: 'res_low', x: 8, z: -26, variant: 2 },
+      { type: 'res_low', x: 16, z: -20, variant: 3 },
+      { type: 'res_low', x: -16, z: 20, variant: 1 },
+      { type: 'res_low', x: -8, z: 26, variant: 2 },
+      { type: 'res_low', x: -38, z: 20, variant: 0 },
+      { type: 'res_low', x: -30, z: 26, variant: 3 },
+      { type: 'res_low', x: 8, z: 20, variant: 0 },
+      { type: 'res_low', x: 16, z: 26, variant: 1 },
+
+      // Mid-Rise Pastel Apartments with Balconies & Rotating Rooftop Fans
+      { type: 'res_suburb', x: -14, z: -2, variant: 0 },
+      { type: 'res_suburb', x: -14, z: 7, variant: 1 },
+      { type: 'res_suburb', x: 34, z: 22, variant: 2 },
 
       // Commercial Shops, Shopping Plaza & Sleek Blue Glass Office Towers
-      { type: 'com_mall', x: 34, z: 0 },
-      { type: 'com_skyscraper', x: 34, z: -24 },
-      { type: 'com_skyscraper', x: 34, z: 22 },
-      { type: 'com_retail', x: 12, z: 7 },
+      { type: 'com_retail', x: 12, z: -44, variant: 0 },
+      { type: 'com_retail', x: 24, z: -44, variant: 1 },
+      { type: 'com_retail', x: -12, z: -44, variant: 2 },
+      { type: 'com_mall', x: 34, z: 0, variant: 0 },
+      { type: 'com_skyscraper', x: 34, z: -24, variant: 0 },
 
-      // Industrial Waterfront & Harbor Port (Left / Bottom-Left)
-      { type: 'ind_factory', x: -58, z: -6 },
-      { type: 'ind_warehouse', x: -58, z: 16 },
-      { type: 'mil_naval_dock', x: -12, z: 42 },
+      // City Hospital with Helipad & Water Treatment Plant
+      { type: 'serv_hospital', x: -12, z: 42, variant: 0 },
+      { type: 'util_water_pump', x: 34, z: -44, variant: 0 },
 
-      // Clean Utilities & City Hospital with Helipad
-      { type: 'util_power_plant', x: -58, z: -26 },
-      { type: 'util_water_pump', x: 34, z: -46 },
-      { type: 'serv_hospital', x: 14, z: 41 },
+      // Southern Harbor Port with Gantry Crane, Containers & Yacht
+      { type: 'mil_naval_dock', x: 14, z: 42, variant: 0 },
 
-      // Defense Compound (White Spherical Radome Tower & SAM Batteries on Right Bank)
-      { type: 'def_radar', x: 96, z: -20 },
-      { type: 'def_sam_battery', x: 96, z: -32 },
-      { type: 'def_sam_battery', x: 96, z: -4 },
-      { type: 'serv_hospital', x: 96, z: 18 },
-
-      // Tactical Airbase in Northern Sector
-      { type: 'mil_airbase', x: -16, z: -50 },
+      // East Bank Military Airbase & Air-Defense Compound (Top-Right across the River)
+      { type: 'mil_airbase', x: 96, z: -28, variant: 0 },
+      { type: 'def_radar', x: 96, z: -6, variant: 0 },
+      { type: 'def_sam_battery', x: 94, z: 6, variant: 0 },
+      { type: 'def_sam_battery', x: 106, z: -6, variant: 1 },
+      { type: 'mil_barracks', x: 94, z: 18, variant: 0 },
     ];
 
     starterList.forEach((item, idx) => {
@@ -316,8 +337,11 @@ export class GameEngine {
         watered: true,
         active: true,
         level: 1,
+        variant: item.variant ?? idx % 4,
+        isConstructing: false,
+        constructionProgress: 1,
       };
-      this.vegetation.clearVegetationAround(item.x, item.z, item.type === 'res_low' ? 3.8 : 7.0);
+      this.vegetation.clearVegetationAround(item.x, item.z, item.type === 'res_low' ? 3.8 : 7.2);
       this.instantiateBuildingMesh(building);
       this.buildings.push(building);
 
@@ -332,15 +356,15 @@ export class GameEngine {
       }
     });
 
-    // Initial economy calculation matching reference HUD metrics ($50,000, +2,000/hr, 1,240, +80/hr, 85%, 92%)
-    this.economy.tick(this.buildings, this.techTree, 0.1);
-    this.economy.state.treasury = 50000;
-    this.economy.state.population = 1240;
-    this.economy.state.netIncome = 2000;
-    this.economy.state.powerGenerated = 320;
-    this.economy.state.powerConsumed = 265;
-    this.economy.state.waterSupplied = 280;
-    this.economy.state.waterConsumed = 248;
+    // Initial economy state matching reference HUD ($25,680, +2,480/hr, 4,320, +120/hr, 78% power, 92% water)
+    this.economy.tick(this.buildings, this.techTree, 0.1, 18);
+    this.economy.state.treasury = 25680;
+    this.economy.state.population = 4320;
+    this.economy.state.netIncome = 2480;
+    this.economy.state.powerGenerated = 380;
+    this.economy.state.powerConsumed = 296;
+    this.economy.state.waterSupplied = 320;
+    this.economy.state.waterConsumed = 294;
     this.economy.state.approvalRating = 94;
 
     this.log('INFO', 'Welcome to WATCH OUT! Expand your city blocks and protect the coastline.');
@@ -371,6 +395,17 @@ export class GameEngine {
     this.instantiateBuildingMesh(building);
     this.buildings.push(building);
 
+    // Spawn brief construction placement dust effect
+    const y = this.terrain.getHeight(building.x, building.z);
+    for (let i = 0; i < 6; i++) {
+      this.particleSystem.spawnSmokePuff(
+        building.x + (Math.random() - 0.5) * 3,
+        y + 0.5,
+        building.z + (Math.random() - 0.5) * 3,
+        0xe2e8f0
+      );
+    }
+
     if (building.type === 'mil_airbase') {
       this.airTraffic.registerAirbase(
         building.id,
@@ -383,7 +418,7 @@ export class GameEngine {
     }
 
     this.defenseSystem.updateRadarCoverageRings(this.buildings);
-    this.log('INFO', `Built ${def.name}.`);
+    this.log('INFO', `Constructing ${def.name}...`);
 
     this.onStateUpdate?.();
   }
@@ -405,9 +440,11 @@ export class GameEngine {
 
   private handleRoadPlacement() {
     if (!this.placement.activeBuildingType || !this.placement.activeBuildingType.startsWith('road_')) return;
-    const roadType = this.placement.activeBuildingType as 'road_two_lane' | 'road_highway' | 'road_bridge';
+    const roadType = this.placement.activeBuildingType as
+      | 'road_two_lane'
+      | 'road_highway'
+      | 'road_bridge';
 
-    // Step 1: Anchor start node (supports snapping to existing nodes OR splitting existing road segments!)
     if (!this.placement.roadStartNode) {
       this.placement.roadStartNode = this.resolveCurrentRoadTargetNode();
       soundManager.playClick();
@@ -415,7 +452,6 @@ export class GameEngine {
       return;
     }
 
-    // Step 2: Connect to destination node
     const startNode = this.placement.roadStartNode;
     const endNode = this.resolveCurrentRoadTargetNode();
     if (endNode.id === startNode.id) return;
@@ -430,12 +466,15 @@ export class GameEngine {
     }
 
     this.roadSystem.addSegment(startNode, endNode, roadType);
-    this.vegetation.clearVegetationAround((startNode.x + endNode.x) / 2, (startNode.z + endNode.z) / 2, dist / 2 + 3);
+    this.vegetation.clearVegetationAround(
+      (startNode.x + endNode.x) / 2,
+      (startNode.z + endNode.z) / 2,
+      dist / 2 + 3
+    );
     this.vegetation.clearVegetationAround(endNode.x, endNode.z, 6);
     soundManager.playPlace();
     this.log('SUCCESS', `Connected road segment ($${cost}).`);
 
-    // Chain continuation
     this.placement.roadStartNode = endNode;
     this.onStateUpdate?.();
   }
@@ -456,7 +495,9 @@ export class GameEngine {
         if (found) {
           this.selectedBuilding = found;
           this.defenseSystem.showCoverageOverlay =
-            found.type === 'def_radar' || found.type === 'def_sam_battery' || found.type === 'def_ciws';
+            found.type === 'def_radar' ||
+            found.type === 'def_sam_battery' ||
+            found.type === 'def_ciws';
           soundManager.playClick();
           this.onStateUpdate?.();
           return;
@@ -489,6 +530,11 @@ export class GameEngine {
       this.buildingMeshes.delete(buildingId);
     }
 
+    this.buildingRenderer.removeBuildingReferences(buildingId);
+    if (building.type === 'mil_airbase') {
+      this.airTraffic.unregisterAirbase(buildingId);
+    }
+
     this.buildings = this.buildings.filter((b) => b.id !== buildingId);
     if (this.selectedBuilding?.id === buildingId) {
       this.selectedBuilding = null;
@@ -508,23 +554,31 @@ export class GameEngine {
     const building = this.buildings.find((b) => b.id === buildingId);
     if (!building) return;
 
-    const repairCost = Math.round((1 - building.health / building.maxHealth) * BUILDING_DEFS[building.type].cost * 0.5);
+    const repairCost = Math.round(
+      (1 - building.health / building.maxHealth) * BUILDING_DEFS[building.type].cost * 0.5
+    );
     if (repairCost > 0 && !this.economy.deductFunds(repairCost)) {
       this.log('WARNING', `Insufficient funds for repair ($${repairCost}).`);
       return;
     }
 
-    building.health = building.maxHealth;
+    building.isRepairing = true;
+    building.repairProgress = 0.25;
+    building.health = Math.min(building.maxHealth, building.health + building.maxHealth * 0.35);
     building.damageFire = false;
     soundManager.playPlace();
-    this.log('SUCCESS', `Repaired ${BUILDING_DEFS[building.type].name}.`);
+    this.log('SUCCESS', `Repairing ${BUILDING_DEFS[building.type].name}...`);
     this.onStateUpdate?.();
   }
 
   public log(type: CombatLogEntry['type'], message: string) {
     const entry: CombatLogEntry = {
       id: `log_${Date.now()}_${Math.random()}`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      timestamp: new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
       type,
       message,
     };
@@ -550,28 +604,30 @@ export class GameEngine {
       // 1. World & Camera
       this.world.update(delta, isPaused);
 
-      // 2. Terrain & Water
-      this.terrain.update(timestamp * 0.001);
+      // 2. Terrain & Water (paused when simulation is paused)
+      if (!isPaused) {
+        this.terrain.update(this.gameTimeSeconds);
+      }
 
       // 3. Placement Preview
       const point = this.world.getTerrainIntersection();
       this.placement.updateCursor(point, this.buildings, this.economy.state.treasury);
 
-      // 4. Building Animations (Rotating Radars)
-      this.buildingRenderer.animatedRadars.forEach((r) => {
-        r.rotation.y += delta * 1.4;
-      });
-      this.buildingRenderer.updateNightLighting(this.world.isNight);
-      this.roadSystem.updateNightLighting(this.world.isNight);
+      // 4. Event-Driven World, Building, Naval, & Construction Animations
+      this.animationSystem.update(
+        simDelta,
+        this.buildings,
+        this.buildingMeshes,
+        this.world.nightFactor
+      );
 
       // 5. Enemy Compound Animation
-      this.enemyFaction.update(delta);
-
       if (!isPaused) {
+        this.enemyFaction.update(simDelta);
         this.gameTimeSeconds += simDelta;
 
         // 6. Traffic & Aircraft
-        this.trafficSystem.update(simDelta, this.world.isNight);
+        this.trafficSystem.update(simDelta, this.world.nightFactor);
         this.airTraffic.update(simDelta);
 
         // 7. Defensive Radar & Missiles
@@ -603,7 +659,12 @@ export class GameEngine {
             if (b) {
               b.health = Math.max(0, b.health - dmg);
               b.damageFire = true;
-              this.particleSystem.spawnExplosion(b.x, this.terrain.getHeight(b.x, b.z) + 2, b.z, 30);
+              this.particleSystem.spawnExplosion(
+                b.x,
+                this.terrain.getHeight(b.x, b.z) + 2,
+                b.z,
+                30
+              );
             }
           },
           (logEntry) => this.log(logEntry.type, logEntry.message)
@@ -628,15 +689,22 @@ export class GameEngine {
 
         // 11. Economic Simulation Clock
         this.simAccumulator += simDelta;
-        if (this.simAccumulator >= 1.5) {
-          this.economy.tick(this.buildings, this.techTree, this.simAccumulator);
+        if (this.simAccumulator >= 1.2) {
+          this.economy.tick(
+            this.buildings,
+            this.techTree,
+            this.simAccumulator,
+            this.trafficSystem.congestionLevel
+          );
           this.simAccumulator = 0;
           this.onStateUpdate?.();
         }
       }
 
       // 12. Particles & Render
-      this.particleSystem.update(delta);
+      if (!isPaused) {
+        this.particleSystem.update(simDelta);
+      }
       this.world.renderer.render(this.world.scene, this.world.camera);
 
       this.animationFrameId = requestAnimationFrame(loop);

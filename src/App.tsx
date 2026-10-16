@@ -9,6 +9,7 @@ import { MilitaryPanel } from './ui/MilitaryPanel';
 import { ResearchModal } from './ui/ResearchModal';
 import { SettingsModal } from './ui/SettingsModal';
 import { TutorialCard } from './ui/TutorialCard';
+import { Minimap } from './ui/Minimap';
 
 export const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -59,7 +60,10 @@ export const App: React.FC = () => {
             onOpenSettings={() => setShowSettings(true)}
           />
 
-          {/* Small Bottom-Left Tutorial Card */}
+          {/* Compact Top-Right Minimap */}
+          <Minimap engine={engine} />
+
+          {/* Compact Top-Left Getting Started Tutorial Card */}
           <TutorialCard engine={engine} onOpenMilitary={() => setShowMilitary(true)} />
 
           {/* Incoming Threat Warning Banner (Only visible during active threat detection) */}

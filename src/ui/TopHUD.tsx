@@ -28,17 +28,17 @@ export const TopHUD: React.FC<TopHUDProps> = ({
   const [showStatsPopover, setShowStatsPopover] = useState(false);
   const eco = engine.economy.state;
 
-  // Clean percentage metrics matching reference UI (e.g. 85% Power, 92% Water)
+  // Clean percentage metrics matching reference UI (78% Power, 92% Water)
   const powerPercent =
     eco.powerGenerated > 0
-      ? Math.min(100, Math.max(10, Math.round((1 - (eco.powerConsumed / Math.max(1, eco.powerGenerated)) * 0.18) * 100)))
+      ? Math.min(100, Math.max(10, Math.round((eco.powerConsumed / Math.max(1, eco.powerGenerated)) * 100)))
       : 0;
   const waterPercent =
     eco.waterSupplied > 0
-      ? Math.min(100, Math.max(10, Math.round((1 - (eco.waterConsumed / Math.max(1, eco.waterSupplied)) * 0.09) * 100)))
+      ? Math.min(100, Math.max(10, Math.round((eco.waterConsumed / Math.max(1, eco.waterSupplied)) * 100)))
       : 0;
 
-  const popGrowthRate = Math.max(10, Math.round((eco.approvalRating / 100) * 85));
+  const popGrowthRate = Math.max(20, Math.round((eco.approvalRating / 100) * 128));
 
   const formatTime12h = (hours24: number) => {
     const totalMinutes = Math.floor(hours24 * 60);
@@ -67,12 +67,12 @@ export const TopHUD: React.FC<TopHUDProps> = ({
       </div>
 
       {/* Center: Compact Essential Resources & Simulation Controls Pill */}
-      <div className="bg-[#101c2e]/90 backdrop-blur-md px-5 py-2 rounded-2xl border border-white/10 shadow-xl flex items-center gap-6 pointer-events-auto">
+      <div className="bg-[#101c2e]/90 backdrop-blur-md px-5 py-2 rounded-2xl border border-white/10 shadow-xl flex items-center gap-5 pointer-events-auto">
         {/* Treasury */}
         <button
           onClick={() => setShowStatsPopover(!showStatsPopover)}
           className="flex items-center gap-2.5 text-left hover:opacity-90 transition-opacity"
-          title="Click to view detailed city statistics"
+          title="Click to view detailed city & economic statistics"
         >
           <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-sm">
             $
@@ -132,7 +132,7 @@ export const TopHUD: React.FC<TopHUDProps> = ({
             <Sun className="w-5 h-5 text-amber-400" />
           )}
           <div className="leading-tight">
-            <div className="text-slate-200 font-medium text-xs">Apr 14, 2025</div>
+            <div className="text-slate-200 font-medium text-xs">Apr 23, 2024</div>
             <div className="text-slate-300 text-[11px]">{formatTime12h(engine.world.timeOfDay)}</div>
           </div>
         </div>
@@ -203,25 +203,29 @@ export const TopHUD: React.FC<TopHUDProps> = ({
 
       {/* On-Demand Statistics Popover (Hidden until user clicks treasury/population) */}
       {showStatsPopover && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-[#101c2e]/95 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl px-5 py-3 flex items-center gap-6 text-xs text-slate-200 pointer-events-auto animate-fade-in">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-[#101c2e]/95 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl px-5 py-3 flex items-center gap-5 text-xs text-slate-200 pointer-events-auto animate-fade-in">
           <div>
-            <span className="text-slate-400 block text-[11px]">Housing Capacity</span>
+            <span className="text-slate-400 block text-[11px]">Housing</span>
             <span className="font-bold text-white">{eco.population} / {eco.maxHousing}</span>
           </div>
           <div className="h-6 w-px bg-white/10" />
           <div>
-            <span className="text-slate-400 block text-[11px]">Citizen Approval</span>
+            <span className="text-slate-400 block text-[11px]">Approval</span>
             <span className="font-bold text-emerald-400">{eco.approvalRating}%</span>
           </div>
           <div className="h-6 w-px bg-white/10" />
           <div>
-            <span className="text-slate-400 block text-[11px]">Power Output</span>
-            <span className="font-bold text-amber-300">{eco.powerConsumed} / {eco.powerGenerated} MW</span>
+            <span className="text-slate-400 block text-[11px]">Zone Demand (R/C/I)</span>
+            <span className="font-bold text-sky-300">
+              {eco.residentialDemand ?? 65}% / {eco.commercialDemand ?? 50}% / {eco.industrialDemand ?? 45}%
+            </span>
           </div>
           <div className="h-6 w-px bg-white/10" />
           <div>
-            <span className="text-slate-400 block text-[11px]">Water Supply</span>
-            <span className="font-bold text-sky-300">{eco.waterConsumed} / {eco.waterSupplied} m³/h</span>
+            <span className="text-slate-400 block text-[11px]">Traffic / Pollution</span>
+            <span className="font-bold text-amber-300">
+              {eco.trafficCongestion ?? 18}% / {eco.pollutionLevel ?? 16}%
+            </span>
           </div>
           <div className="h-6 w-px bg-white/10" />
           <div>
