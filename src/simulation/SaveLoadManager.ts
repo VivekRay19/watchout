@@ -11,7 +11,7 @@ export interface GameSaveData {
   settings: GameSettings;
 }
 
-const SAVE_KEY = 'watchout_game_save_v1';
+const SAVE_KEY = 'watchout_game_save_v2';
 
 export class SaveLoadManager {
   public static save(
@@ -24,7 +24,7 @@ export class SaveLoadManager {
   ): boolean {
     try {
       const data: GameSaveData = {
-        version: '1.2.0',
+        version: '2.0.0',
         timestamp: Date.now(),
         buildings,
         roadNodes,
@@ -47,7 +47,7 @@ export class SaveLoadManager {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return null;
       const data = JSON.parse(raw) as GameSaveData;
-      if (!data || !data.version) return null;
+      if (!data || data.version !== '2.0.0') return null;
       return data;
     } catch (e) {
       console.error('Failed to load game:', e);
@@ -72,7 +72,7 @@ export class SaveLoadManager {
     settings: GameSettings
   ): string {
     const data: GameSaveData = {
-      version: '1.2.0',
+      version: '2.0.0',
       timestamp: Date.now(),
       buildings,
       roadNodes,

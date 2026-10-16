@@ -205,9 +205,9 @@ export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = {
     maintenance: 90,
     width: 4,
     depth: 4,
-    powerDemand: -160, // generates 160 MW
-    waterDemand: 35,
-    description: 'Large thermal power facility with dual cooling towers. Generates 160 MW of base-load power.',
+    powerDemand: -320, // generates 320 MW
+    waterDemand: 25,
+    description: 'Large thermal power facility with dual cooling towers. Generates 320 MW of base-load power.',
     maxHealth: 2000,
     requiredTech: 'smart_grid',
   },
@@ -220,7 +220,7 @@ export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = {
     width: 2,
     depth: 2,
     powerDemand: 8,
-    waterDemand: -80, // supplies 80 m3/h
+    waterDemand: -280, // supplies 280 m3/h
     description: 'Pumps and purifies fresh water from the river basin for citywide distribution.',
     maxHealth: 450,
   },

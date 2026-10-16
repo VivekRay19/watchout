@@ -13,9 +13,11 @@ export class DefenseSystem {
   public activeMissiles: InterceptorMissile[] = [];
   private missileMeshes: Map<string, THREE.Group> = new Map();
   private coverageRings: THREE.Mesh[] = [];
+  private trackingLinesGroup: THREE.Group;
   private lastFireTimes: Map<string, number> = new Map();
+  public showCoverageOverlay: boolean = false;
 
-  // Development-only diagnostic visuals
+  // Diagnostic visuals
   public debugGroup: THREE.Group;
   public showDebug: boolean = false;
 
@@ -23,7 +25,9 @@ export class DefenseSystem {
     this.renderer = renderer;
     this.particles = particles;
     this.group = new THREE.Group();
+    this.trackingLinesGroup = new THREE.Group();
     this.debugGroup = new THREE.Group();
+    this.group.add(this.trackingLinesGroup);
     this.group.add(this.debugGroup);
   }
 
@@ -39,19 +43,19 @@ export class DefenseSystem {
       if (!range) return;
 
       const isRadar = !!def.radarRadius;
-      const ringGeo = new THREE.RingGeometry(range - 1.8, range, 64);
+      const ringGeo = new THREE.RingGeometry(range - 1.2, range, 64);
       ringGeo.rotateX(-Math.PI / 2);
 
-      const color = isRadar ? 0x06b6d4 : 0x10b981; // Cyan for radar, Emerald for SAM
+      const color = isRadar ? 0x38bdf8 : 0x22c55e;
       const ringMat = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
-        opacity: 0.35,
+        opacity: 0.0, // Hidden during peaceful city building to eliminate visual noise
         side: THREE.DoubleSide,
       });
 
       const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-      ringMesh.position.set(b.x, 0.45, b.z);
+      ringMesh.position.set(b.x, 1.75, b.z);
       this.group.add(ringMesh);
       this.coverageRings.push(ringMesh);
     });
@@ -64,14 +68,16 @@ export class DefenseSystem {
     delta: number,
     onLog: (entry: CombatLogEntry) => void
   ) {
-    // 1. Radar Detection Processing
-    const radars = buildings.filter((b) => b.type === 'def_radar' && b.active && b.powered);
+    // 1. Radar & Fire-Control Detection Processing
+    const sensors = buildings.filter(
+      (b) => (b.type === 'def_radar' || b.type === 'def_sam_battery') && b.active && b.powered
+    );
 
     threats.forEach((threat) => {
       if (threat.state === 'UNDETECTED') {
-        for (const r of radars) {
-          const dist = Math.hypot(threat.x - r.x, threat.z - r.z);
-          const range = BUILDING_DEFS[r.type].radarRadius || 180;
+        for (const s of sensors) {
+          const dist = Math.hypot(threat.x - s.x, threat.z - s.z);
+          const range = s.type === 'def_radar' ? (BUILDING_DEFS[s.type].radarRadius || 210) : 155;
           if (dist <= range) {
             threat.detected = true;
             threat.state = 'DETECTED';
@@ -80,7 +86,7 @@ export class DefenseSystem {
               id: `log_${Date.now()}_${Math.random()}`,
               timestamp: new Date().toLocaleTimeString(),
               type: 'ALERT',
-              message: `EARLY WARNING: Radar acquired hostile contact [${threat.name.toUpperCase()}] range ${Math.round(dist)}km!`,
+              message: `RADAR CONTACT: Early Warning Radar detected [${threat.name}] at range ${Math.round(dist)}m!`,
             });
             break;
           }
@@ -88,7 +94,12 @@ export class DefenseSystem {
       }
     });
 
-    // 2. Air-Defense SAM & CIWS Target Assignment & Interception
+    // Clear and rebuild subtle active tracking lock lines
+    while (this.trackingLinesGroup.children.length > 0) {
+      this.trackingLinesGroup.remove(this.trackingLinesGroup.children[0]);
+    }
+
+    // 2. Air-Defense SAM & CIWS Target Tracking & Interceptor Launch
     const defenses = buildings.filter(
       (b) => (b.type === 'def_sam_battery' || b.type === 'def_ciws') && b.active
     );
@@ -96,20 +107,17 @@ export class DefenseSystem {
     defenses.forEach((sam) => {
       const def = BUILDING_DEFS[sam.type];
 
-      // Initialize ammunition if not present
       if (sam.ammo === undefined) {
         sam.maxAmmo = sam.type === 'def_ciws' ? 600 : 4;
         sam.ammo = sam.maxAmmo;
         sam.defenseStatus = 'IDLE';
       }
 
-      // Check power state
       if (!sam.powered) {
         sam.defenseStatus = 'UNPOWERED';
         return;
       }
 
-      // Reloading mechanics
       if (sam.isReloading) {
         sam.reloadProgress = (sam.reloadProgress || 0) + delta;
         sam.defenseStatus = 'RELOADING';
@@ -124,13 +132,12 @@ export class DefenseSystem {
             id: `log_${Date.now()}_${Math.random()}`,
             timestamp: new Date().toLocaleTimeString(),
             type: 'INFO',
-            message: `${def.name} reload complete. All missile canisters armed.`,
+            message: `${def.name} reload complete. Launcher canisters ready.`,
           });
         }
         return;
       }
 
-      // Check if depleted of ammunition
       if (sam.ammo <= 0) {
         sam.isReloading = true;
         sam.reloadProgress = 0;
@@ -138,11 +145,10 @@ export class DefenseSystem {
         return;
       }
 
-      const maxRange = def.defenseRange || 140;
-      const fireInterval = (def.fireRate || 2.5) * 1000;
+      const maxRange = (def.defenseRange || 140) + 30;
+      const fireInterval = (def.fireRate || 2.2) * 1000;
       const lastFire = this.lastFireTimes.get(sam.id) || 0;
 
-      // Find best active detected threat in range
       let bestThreat: Threat | null = null;
       let bestDist = maxRange;
 
@@ -161,33 +167,46 @@ export class DefenseSystem {
         const target: Threat = bestThreat;
         sam.assignedTargetId = target.id;
         sam.defenseStatus = 'TRACKING';
-        target.state = 'TRACKED';
+        if (target.state === 'DETECTED') {
+          target.state = 'TRACKED';
+        }
 
-        // Accurately Aim Turret in 3D: Azimuth and Elevation
+        // Rotate 3D Turret in Azimuth & Pitch toward target
         if (launcher) {
           const dx = target.x - sam.x;
           const dz = target.z - sam.z;
-          const dy = target.y - (launcher.pitchMount.position.y + 1.2);
+          const dy = target.y - 3.2;
           const hDist = Math.max(1, Math.hypot(dx, dz));
 
-          // Calculate world azimuth and subtract building rotation
           const worldAngle = Math.atan2(dx, dz);
           launcher.base.rotation.y = worldAngle - sam.rotation;
 
-          // Calculate pitch elevation
           const pitchAngle = Math.atan2(dy, hDist);
           launcher.pitchMount.rotation.x = -pitchAngle;
         }
 
-        // Firing decision
-        if (now - lastFire >= fireInterval) {
+        // Draw clean target lock line while tracking/engaging
+        const lockPoints = [
+          new THREE.Vector3(sam.x, 3.2, sam.z),
+          new THREE.Vector3(target.x, target.y, target.z),
+        ];
+        const lockGeo = new THREE.BufferGeometry().setFromPoints(lockPoints);
+        const lockMat = new THREE.LineBasicMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.45,
+        });
+        this.trackingLinesGroup.add(new THREE.Line(lockGeo, lockMat));
+
+        // Launch Interceptor Missile
+        if (now - lastFire >= fireInterval && target.interceptorsInFlight < 2) {
           this.lastFireTimes.set(sam.id, now);
           sam.ammo -= 1;
           sam.defenseStatus = 'FIRING';
           target.state = 'ENGAGED';
           target.interceptorsInFlight += 1;
 
-          this.launchInterceptor(sam, target, launcher);
+          this.launchInterceptor(sam, target);
 
           if (sam.type === 'def_ciws') {
             soundManager.playCiwsFire();
@@ -199,14 +218,13 @@ export class DefenseSystem {
             id: `log_${Date.now()}_${Math.random()}`,
             timestamp: new Date().toLocaleTimeString(),
             type: 'INFO',
-            message: `${def.name} launched interceptor on [${target.name}] (Range: ${Math.round(bestDist)}m, Ammo: ${sam.ammo}/${sam.maxAmmo})`,
+            message: `${def.name} launched interceptor at [${target.name}] (Range: ${Math.round(bestDist)}m)`,
           });
         }
       } else {
         sam.assignedTargetId = undefined;
         sam.defenseStatus = 'IDLE';
 
-        // Return launcher to resting elevation
         if (launcher) {
           launcher.pitchMount.rotation.x = -Math.PI / 4.2;
         }
@@ -216,15 +234,11 @@ export class DefenseSystem {
     if (this.showDebug) this.updateDebugVisuals(buildings, threats);
   }
 
-  private launchInterceptor(
-    sam: PlacedBuilding,
-    target: Threat,
-    launcher?: { base: THREE.Object3D; pitchMount: THREE.Object3D }
-  ) {
+  private launchInterceptor(sam: PlacedBuilding, target: Threat) {
     const missileId = `msl_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
     const startX = sam.x;
-    const startY = 2.4;
+    const startY = 3.5;
     const startZ = sam.z;
 
     const missile: InterceptorMissile = {
@@ -239,45 +253,41 @@ export class DefenseSystem {
       prevY: startY,
       prevZ: startZ,
       targetThreatId: target.id,
-      speed: sam.type === 'def_ciws' ? 75 : 55, // Fast hypersonic rocket
+      speed: sam.type === 'def_ciws' ? 75 : 58,
       lifeTime: 0,
-      maxLifeTime: 5.5,
+      maxLifeTime: 7.0,
     };
 
-    // Detailed 3D Interceptor Missile Mesh
+    // High-visibility 3D Interceptor Missile Mesh
     const mesh = new THREE.Group();
 
-    // Cylindrical missile airframe
-    const bodyGeo = new THREE.CylinderGeometry(0.14, 0.14, 1.8, 8);
+    const bodyGeo = new THREE.CylinderGeometry(0.22, 0.22, 2.4, 8);
     bodyGeo.rotateX(Math.PI / 2);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.6 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     mesh.add(body);
 
-    // Aerodynamic nose cone (Warhead)
-    const noseGeo = new THREE.ConeGeometry(0.14, 0.6, 8);
+    const noseGeo = new THREE.ConeGeometry(0.22, 0.8, 8);
     noseGeo.rotateX(-Math.PI / 2);
-    const noseMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.2 });
+    const noseMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
     const nose = new THREE.Mesh(noseGeo, noseMat);
-    nose.position.z = 1.2;
+    nose.position.z = 1.6;
     mesh.add(nose);
 
-    // Cruciform Tail Guidance Fins
-    const finGeo = new THREE.BoxGeometry(0.7, 0.04, 0.4);
+    const finGeo = new THREE.BoxGeometry(0.9, 0.06, 0.5);
     const fin1 = new THREE.Mesh(finGeo, bodyMat);
-    fin1.position.z = -0.7;
+    fin1.position.z = -0.9;
     const fin2 = new THREE.Mesh(finGeo, bodyMat);
-    fin2.position.z = -0.7;
+    fin2.position.z = -0.9;
     fin2.rotation.z = Math.PI / 2;
     mesh.add(fin1, fin2);
 
-    // Glowing Rocket Engine Plume
     const plume = new THREE.Mesh(
-      new THREE.ConeGeometry(0.12, 0.7, 6),
+      new THREE.ConeGeometry(0.24, 1.1, 8),
       new THREE.MeshBasicMaterial({ color: 0xf97316 })
     );
     plume.rotateX(Math.PI / 2);
-    plume.position.z = -1.25;
+    plume.position.z = -1.75;
     mesh.add(plume);
 
     mesh.position.set(startX, startY, startZ);
@@ -294,13 +304,15 @@ export class DefenseSystem {
     onThreatDestroyed: (threatId: string) => void,
     onLog: (entry: CombatLogEntry) => void
   ) {
-    // Pulse radar coverage rings gently
-    const pulse = 0.32 + Math.sin(Date.now() * 0.003) * 0.08;
+    // Only show radar coverage rings when an active threat is detected or when explicitly inspecting defense
+    const hasActiveThreat = threats.some((t) => t.detected && t.state !== 'INTERCEPTED' && t.state !== 'IMPACTED');
+    const targetOpacity = hasActiveThreat || this.showCoverageOverlay ? 0.28 : 0.0;
+
     this.coverageRings.forEach((r) => {
-      (r.material as THREE.MeshBasicMaterial).opacity = pulse;
+      const mat = r.material as THREE.MeshBasicMaterial;
+      mat.opacity = THREE.MathUtils.lerp(mat.opacity, targetOpacity, delta * 5);
     });
 
-    // Update active interceptor missiles
     for (let i = this.activeMissiles.length - 1; i >= 0; i--) {
       const m = this.activeMissiles[i];
       m.lifeTime += delta;
@@ -308,7 +320,6 @@ export class DefenseSystem {
       const mesh = this.missileMeshes.get(m.id);
       const target = threats.find((t) => t.id === m.targetThreatId);
 
-      // Timeout or target already neutralized
       if (!target || target.state === 'INTERCEPTED' || target.state === 'IMPACTED' || m.lifeTime > m.maxLifeTime) {
         if (mesh) this.group.remove(mesh);
         this.missileMeshes.delete(m.id);
@@ -316,12 +327,10 @@ export class DefenseSystem {
         continue;
       }
 
-      // Record previous coordinate before step
       m.prevX = m.x;
       m.prevY = m.y;
       m.prevZ = m.z;
 
-      // Proportional Navigation / Lead Pursuit vector
       const dx = target.x - m.x;
       const dy = target.y - m.y;
       const dz = target.z - m.z;
@@ -329,12 +338,10 @@ export class DefenseSystem {
 
       const step = m.speed * delta;
 
-      // Swept Segment Collision Detection:
-      // Check if distance to target is less than step + impact radius (eliminating tunneling!)
-      if (dist <= step + 3.8) {
-        // Resolve Interception Hit
+      // Swept-segment collision check
+      if (dist <= step + 4.2) {
         target.state = 'INTERCEPTED';
-        this.particles.spawnExplosion(target.x, target.y, target.z, 75);
+        this.particles.spawnExplosion(target.x, target.y, target.z, 55);
         soundManager.playExplosion();
 
         onThreatDestroyed(target.id);
@@ -342,7 +349,7 @@ export class DefenseSystem {
           id: `log_${Date.now()}_${Math.random()}`,
           timestamp: new Date().toLocaleTimeString(),
           type: 'SUCCESS',
-          message: `TARGET SPLASH: Interceptor destroyed hostile contact [${target.name.toUpperCase()}] in mid-air!`,
+          message: `TARGET INTERCEPTED: Air defense destroyed [${target.name}] in mid-air!`,
         });
 
         if (mesh) this.group.remove(mesh);
@@ -358,13 +365,11 @@ export class DefenseSystem {
           mesh.lookAt(target.x, target.y, target.z);
         }
 
-        // Exhaust smoke particles
         this.particles.spawnMissileTrail(m.x, m.y, m.z);
       }
     }
   }
 
-  // Combat diagnostic tools
   public setDebugVisible(visible: boolean) {
     this.showDebug = visible;
     this.debugGroup.visible = visible;
@@ -376,13 +381,12 @@ export class DefenseSystem {
     }
     if (!this.showDebug) return;
 
-    // Line of sight rays from SAM batteries to tracked targets
     buildings.forEach((b) => {
       if ((b.type === 'def_sam_battery' || b.type === 'def_ciws') && b.assignedTargetId) {
         const target = threats.find((t) => t.id === b.assignedTargetId);
         if (target) {
           const points = [
-            new THREE.Vector3(b.x, 2.5, b.z),
+            new THREE.Vector3(b.x, 3.0, b.z),
             new THREE.Vector3(target.x, target.y, target.z),
           ];
           const lineGeo = new THREE.BufferGeometry().setFromPoints(points);

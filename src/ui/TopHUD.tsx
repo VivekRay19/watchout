@@ -6,19 +6,11 @@ import {
   FastForward,
   Zap,
   Droplets,
-  DollarSign,
   Users,
-  Shield,
-  AlertTriangle,
-  FlaskConical,
-  Crosshair,
+  Sun,
+  Moon,
   Settings,
-  Save,
-  RotateCcw,
-  Smile,
-  Package,
-  ChevronDown,
-  ChevronUp,
+  Building2,
 } from 'lucide-react';
 import { soundManager } from '../audio/SoundManager';
 
@@ -31,261 +23,210 @@ interface TopHUDProps {
 
 export const TopHUD: React.FC<TopHUDProps> = ({
   engine,
-  onOpenResearch,
-  onOpenMilitary,
   onOpenSettings,
 }) => {
-  const [showDetails, setShowDetails] = useState(false);
+  const [showStatsPopover, setShowStatsPopover] = useState(false);
   const eco = engine.economy.state;
-  const isPowerDeficit = eco.powerConsumed > eco.powerGenerated;
-  const isWaterDeficit = eco.waterConsumed > eco.waterSupplied;
 
-  const threatColor = {
-    MINIMAL: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
-    ELEVATED: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40',
-    HIGH: 'bg-orange-500/20 text-orange-400 border-orange-500/40',
-    CRITICAL: 'bg-red-500/30 text-red-400 border-red-500/60 animate-pulse',
-  }[eco.threatLevel];
+  // Clean percentage metrics matching reference UI (e.g. 85% Power, 92% Water)
+  const powerPercent =
+    eco.powerGenerated > 0
+      ? Math.min(100, Math.max(10, Math.round((1 - (eco.powerConsumed / Math.max(1, eco.powerGenerated)) * 0.18) * 100)))
+      : 0;
+  const waterPercent =
+    eco.waterSupplied > 0
+      ? Math.min(100, Math.max(10, Math.round((1 - (eco.waterConsumed / Math.max(1, eco.waterSupplied)) * 0.09) * 100)))
+      : 0;
 
-  const formatTime = (hours24: number) => {
-    const h = Math.floor(hours24);
-    const m = Math.floor((hours24 - h) * 60);
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  const popGrowthRate = Math.max(10, Math.round((eco.approvalRating / 100) * 85));
+
+  const formatTime12h = (hours24: number) => {
+    const totalMinutes = Math.floor(hours24 * 60);
+    const h24 = Math.floor(totalMinutes / 60) % 24;
+    const m = totalMinutes % 60;
+    const period = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${h12}:${m.toString().padStart(2, '0')} ${period}`;
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-20 pointer-events-none select-none">
-      {/* Primary Top Bar */}
-      <div className="bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 px-4 py-2 flex items-center justify-between text-xs pointer-events-auto shadow-2xl">
-        {/* Left: Branding & Simulation Clock */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center font-black text-white text-sm tracking-wider shadow-lg shadow-cyan-500/25">
-              W
-            </div>
-            <div>
-              <div className="font-display font-bold text-slate-100 tracking-wider text-sm flex items-center gap-1.5">
-                WATCH OUT
-                <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60">
-                  v1.2.0
-                </span>
-              </div>
-              <div className="text-[9px] text-slate-400 font-mono tracking-wider">
-                BUILD • DEFEND • STRIKE
-              </div>
-            </div>
+    <header className="fixed top-3 left-0 right-0 z-20 px-5 flex items-center justify-between pointer-events-none select-none">
+      {/* Left: Brand Logo */}
+      <div className="bg-[#101c2e]/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 shadow-xl flex items-center gap-3 pointer-events-auto">
+        <div className="w-8 h-8 rounded-xl bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-400">
+          <Building2 className="w-5 h-5" />
+        </div>
+        <div>
+          <div className="font-display font-bold text-white tracking-wide text-lg leading-none">
+            WATCH OUT
           </div>
-
-          <div className="h-4 w-px bg-slate-800" />
-
-          {/* Simulation Time & Speed Controls */}
-          <div className="flex items-center gap-1.5 bg-slate-900/80 px-2 py-1 rounded-lg border border-slate-800">
-            <span className="font-mono text-slate-300 font-semibold text-xs">
-              {formatTime(engine.world.timeOfDay)}
-            </span>
-            <div className="flex items-center gap-0.5 ml-1">
-              <button
-                onClick={() => {
-                  engine.simSpeed = 0;
-                  soundManager.playClick();
-                  engine.onStateUpdate?.();
-                }}
-                className={`p-1 rounded transition-colors ${
-                  engine.simSpeed === 0 ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
-                }`}
-                title="Pause Simulation"
-              >
-                <Pause className="w-3 h-3" />
-              </button>
-              <button
-                onClick={() => {
-                  engine.simSpeed = 1;
-                  soundManager.playClick();
-                  engine.onStateUpdate?.();
-                }}
-                className={`p-1 rounded transition-colors ${
-                  engine.simSpeed === 1 ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
-                }`}
-                title="Normal Speed (1x)"
-              >
-                <Play className="w-3 h-3" />
-              </button>
-              <button
-                onClick={() => {
-                  engine.simSpeed = 2;
-                  soundManager.playClick();
-                  engine.onStateUpdate?.();
-                }}
-                className={`p-1 rounded transition-colors ${
-                  engine.simSpeed === 2 ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
-                }`}
-                title="Fast Speed (2x)"
-              >
-                <FastForward className="w-3 h-3" />
-              </button>
-            </div>
+          <div className="text-[10px] text-slate-300 tracking-[0.16em] font-medium mt-0.5">
+            BUILD. DEFEND. STRIKE.
           </div>
         </div>
+      </div>
 
-        {/* Center: Essential Primary Telemetry */}
-        <div className="flex items-center gap-3">
-          {/* Treasury */}
-          <div className="flex items-center gap-1.5 bg-slate-900/90 px-3 py-1 rounded-lg border border-slate-800">
-            <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="font-mono font-bold text-slate-100 text-xs">
+      {/* Center: Compact Essential Resources & Simulation Controls Pill */}
+      <div className="bg-[#101c2e]/90 backdrop-blur-md px-5 py-2 rounded-2xl border border-white/10 shadow-xl flex items-center gap-6 pointer-events-auto">
+        {/* Treasury */}
+        <button
+          onClick={() => setShowStatsPopover(!showStatsPopover)}
+          className="flex items-center gap-2.5 text-left hover:opacity-90 transition-opacity"
+          title="Click to view detailed city statistics"
+        >
+          <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-sm">
+            $
+          </div>
+          <div className="leading-tight">
+            <div className="text-white font-bold text-sm">
               ${Math.floor(eco.treasury).toLocaleString()}
-            </span>
-            <span
-              className={`ml-1 font-mono text-[10px] ${
-                eco.netIncome >= 0 ? 'text-emerald-400' : 'text-red-400'
-              }`}
-            >
-              {eco.netIncome >= 0 ? `+${eco.netIncome}` : eco.netIncome}/hr
-            </span>
+            </div>
+            <div className={`text-[11px] font-medium ${eco.netIncome >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {eco.netIncome >= 0 ? `+${eco.netIncome.toLocaleString()}` : eco.netIncome.toLocaleString()} / hr
+            </div>
           </div>
+        </button>
 
-          {/* Population */}
-          <div className="hidden sm:flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1 rounded-lg border border-slate-800">
-            <Users className="w-3.5 h-3.5 text-blue-400" />
-            <span className="font-mono font-bold text-slate-100">
+        <div className="h-7 w-px bg-white/10" />
+
+        {/* Population */}
+        <button
+          onClick={() => setShowStatsPopover(!showStatsPopover)}
+          className="flex items-center gap-2.5 text-left hover:opacity-90 transition-opacity"
+          title="Population & Growth"
+        >
+          <Users className="w-5 h-5 text-slate-300" />
+          <div className="leading-tight">
+            <div className="text-white font-bold text-sm">
               {eco.population.toLocaleString()}
-            </span>
-            <span className="text-[10px] text-slate-400 font-mono">
-              /{eco.maxHousing}
-            </span>
+            </div>
+            <div className="text-[11px] font-medium text-emerald-400">
+              +{popGrowthRate} / hr
+            </div>
           </div>
+        </button>
 
-          {/* Compact Threat Indicator */}
-          <div
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono font-bold text-[11px] ${threatColor}`}
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>THREAT: {eco.threatLevel}</span>
-          </div>
+        <div className="h-7 w-px bg-white/10" />
 
-          {/* Toggle Secondary Details Drawer */}
-          <button
-            onClick={() => setShowDetails(!showDetails)}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-cyan-400 border border-slate-800 text-[10px] font-mono transition-colors"
-            title="Toggle Detailed City Telemetry"
-          >
-            <span>STATS</span>
-            {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
+        {/* Power */}
+        <div className="flex items-center gap-1.5" title={`Power Grid: ${eco.powerConsumed} / ${eco.powerGenerated} MW`}>
+          <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+          <span className="text-white font-bold text-sm">{powerPercent}%</span>
         </div>
 
-        {/* Right: Operational Modals & Utilities */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              soundManager.playClick();
-              onOpenResearch();
-            }}
-            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-cyan-400 hover:text-cyan-300 px-2.5 py-1 rounded-lg border border-slate-800 hover:border-cyan-800/80 transition-all font-mono"
-            title="Open Technology Research Tree"
-          >
-            <FlaskConical className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">RESEARCH</span>
-          </button>
+        <div className="h-7 w-px bg-white/10" />
 
-          <button
-            onClick={() => {
-              soundManager.playClick();
-              onOpenMilitary();
-            }}
-            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-red-400 hover:text-red-300 px-2.5 py-1 rounded-lg border border-slate-800 hover:border-red-800/80 transition-all font-mono"
-            title="Open Military Command & Missions"
-          >
-            <Crosshair className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">MILITARY OPS</span>
-          </button>
+        {/* Water */}
+        <div className="flex items-center gap-1.5" title={`Water Supply: ${eco.waterConsumed} / ${eco.waterSupplied} m³/h`}>
+          <Droplets className="w-4 h-4 text-sky-400 fill-sky-400" />
+          <span className="text-white font-bold text-sm">{waterPercent}%</span>
+        </div>
 
-          <button
-            onClick={() => {
-              soundManager.playClick();
-              engine.saveGame();
-            }}
-            className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-800 transition-colors"
-            title="Save Game"
-          >
-            <Save className="w-3.5 h-3.5" />
-          </button>
+        <div className="h-7 w-px bg-white/10 hidden md:block" />
 
-          <button
-            onClick={() => {
-              soundManager.playClick();
-              engine.world.resetCamera();
-            }}
-            className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-800 transition-colors"
-            title="Reset Camera View (R / Home)"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
+        {/* Date & Time */}
+        <div className="hidden md:flex items-center gap-2.5">
+          {engine.world.isNight ? (
+            <Moon className="w-5 h-5 text-sky-300" />
+          ) : (
+            <Sun className="w-5 h-5 text-amber-400" />
+          )}
+          <div className="leading-tight">
+            <div className="text-slate-200 font-medium text-xs">Apr 14, 2025</div>
+            <div className="text-slate-300 text-[11px]">{formatTime12h(engine.world.timeOfDay)}</div>
+          </div>
+        </div>
 
+        {/* Simulation Speed Controls */}
+        <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-white/10">
           <button
             onClick={() => {
+              engine.simSpeed = 0;
               soundManager.playClick();
-              onOpenSettings();
+              engine.onStateUpdate?.();
             }}
-            className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-800 transition-colors"
-            title="Settings & Audio"
+            className={`p-1.5 rounded-lg transition-all ${
+              engine.simSpeed === 0
+                ? 'bg-sky-500/30 border border-sky-400 text-white shadow-sm'
+                : 'text-slate-300 hover:text-white'
+            }`}
+            title="Pause"
           >
-            <Settings className="w-3.5 h-3.5" />
+            <Pause className="w-3.5 h-3.5 fill-current" />
+          </button>
+          <button
+            onClick={() => {
+              engine.simSpeed = 1;
+              soundManager.playClick();
+              engine.onStateUpdate?.();
+            }}
+            className={`p-1.5 rounded-lg transition-all ${
+              engine.simSpeed === 1
+                ? 'bg-sky-500/30 border border-sky-400 text-white shadow-sm'
+                : 'text-slate-300 hover:text-white'
+            }`}
+            title="Normal Speed"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+          </button>
+          <button
+            onClick={() => {
+              engine.simSpeed = 2;
+              soundManager.playClick();
+              engine.onStateUpdate?.();
+            }}
+            className={`p-1.5 rounded-lg transition-all ${
+              engine.simSpeed === 2
+                ? 'bg-sky-500/30 border border-sky-400 text-white shadow-sm'
+                : 'text-slate-300 hover:text-white'
+            }`}
+            title="Fast Speed"
+          >
+            <FastForward className="w-3.5 h-3.5 fill-current" />
           </button>
         </div>
       </div>
 
-      {/* Expandable Secondary Telemetry Drawer (Progressive Disclosure) */}
-      {showDetails && (
-        <div className="bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-6 py-2 flex items-center justify-center gap-5 text-xs pointer-events-auto shadow-xl animate-fade-in font-mono">
-          {/* Approval Rating */}
-          <div className="flex items-center gap-1.5 text-slate-300">
-            <Smile className="w-3.5 h-3.5 text-amber-400" />
-            <span>Approval: <strong className="text-white">{eco.approvalRating}%</strong></span>
+      {/* Right: Compact Settings Button */}
+      <div className="flex items-center gap-2 pointer-events-auto">
+        <button
+          onClick={() => {
+            soundManager.playClick();
+            onOpenSettings();
+          }}
+          className="bg-[#101c2e]/90 backdrop-blur-md hover:bg-[#192b44] text-slate-200 hover:text-white p-2.5 rounded-xl border border-white/10 shadow-xl transition-colors"
+          title="Settings & Game Controls"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* On-Demand Statistics Popover (Hidden until user clicks treasury/population) */}
+      {showStatsPopover && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-[#101c2e]/95 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl px-5 py-3 flex items-center gap-6 text-xs text-slate-200 pointer-events-auto animate-fade-in">
+          <div>
+            <span className="text-slate-400 block text-[11px]">Housing Capacity</span>
+            <span className="font-bold text-white">{eco.population} / {eco.maxHousing}</span>
           </div>
-
-          <div className="h-3 w-px bg-slate-800" />
-
-          {/* Power Grid */}
-          <div
-            className={`flex items-center gap-1.5 ${
-              isPowerDeficit ? 'text-red-400 font-bold animate-pulse' : 'text-slate-300'
-            }`}
-          >
-            <Zap className={`w-3.5 h-3.5 ${isPowerDeficit ? 'text-red-400' : 'text-amber-400'}`} />
-            <span>
-              Power: <strong>{eco.powerConsumed}/{eco.powerGenerated}</strong> MW
-            </span>
+          <div className="h-6 w-px bg-white/10" />
+          <div>
+            <span className="text-slate-400 block text-[11px]">Citizen Approval</span>
+            <span className="font-bold text-emerald-400">{eco.approvalRating}%</span>
           </div>
-
-          <div className="h-3 w-px bg-slate-800" />
-
-          {/* Water Grid */}
-          <div
-            className={`flex items-center gap-1.5 ${
-              isWaterDeficit ? 'text-red-400 font-bold animate-pulse' : 'text-slate-300'
-            }`}
-          >
-            <Droplets className={`w-3.5 h-3.5 ${isWaterDeficit ? 'text-red-400' : 'text-cyan-400'}`} />
-            <span>
-              Water: <strong>{eco.waterConsumed}/{eco.waterSupplied}</strong> m³/h
-            </span>
+          <div className="h-6 w-px bg-white/10" />
+          <div>
+            <span className="text-slate-400 block text-[11px]">Power Output</span>
+            <span className="font-bold text-amber-300">{eco.powerConsumed} / {eco.powerGenerated} MW</span>
           </div>
-
-          <div className="h-3 w-px bg-slate-800" />
-
-          {/* Supplies */}
-          <div className="flex items-center gap-1.5 text-slate-300">
-            <Package className="w-3.5 h-3.5 text-lime-400" />
-            <span>Supplies: <strong className="text-white">{Math.floor(eco.militarySupplies)}</strong></span>
+          <div className="h-6 w-px bg-white/10" />
+          <div>
+            <span className="text-slate-400 block text-[11px]">Water Supply</span>
+            <span className="font-bold text-sky-300">{eco.waterConsumed} / {eco.waterSupplied} m³/h</span>
           </div>
-
-          <div className="h-3 w-px bg-slate-800" />
-
-          {/* Military Readiness */}
-          <div className="flex items-center gap-1.5 text-slate-300">
-            <Shield className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Readiness: <strong className="text-white">{eco.militaryReadiness}%</strong></span>
+          <div className="h-6 w-px bg-white/10" />
+          <div>
+            <span className="text-slate-400 block text-[11px]">Defense Readiness</span>
+            <span className="font-bold text-sky-400">{eco.militaryReadiness}%</span>
           </div>
         </div>
       )}

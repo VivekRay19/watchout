@@ -15,18 +15,25 @@ interface Vehicle {
 export class TrafficSystem {
   public group: THREE.Group;
   private roadSystem: RoadSystem;
-  private vehicles: Vehicle[] = [];
-  private maxVehicles = 25;
-  private carColors = [0xef4444, 0x3b82f6, 0xe2e8f0, 0x1f2937, 0xf59e0b, 0x10b981];
+  public vehicles: Vehicle[] = [];
+  private maxVehicles = 36;
+  // Bright, cohesive vehicle colors matching reference image (coral red, taxi yellow, sky blue, white, orange, green)
+  private carColors = [0xef4444, 0xfacc15, 0x3b82f6, 0xf8fafc, 0xf97316, 0x22c55e];
 
   constructor(roadSystem: RoadSystem) {
     this.roadSystem = roadSystem;
     this.group = new THREE.Group();
   }
 
+  public seedTraffic(count = 22) {
+    for (let i = 0; i < count; i++) {
+      this.trySpawnVehicle(0.15 + ((i * 0.19) % 0.7));
+    }
+    this.update(0.01, false);
+  }
+
   public update(delta: number, isNight: boolean) {
-    // If not enough vehicles and road network has at least 2 connected nodes, spawn
-    if (this.vehicles.length < this.maxVehicles && Math.random() < 0.05) {
+    if (this.vehicles.length < this.maxVehicles && Math.random() < 0.08) {
       this.trySpawnVehicle();
     }
 
@@ -35,7 +42,9 @@ export class TrafficSystem {
       const n1 = v.currentNode;
       const n2 = v.targetNode;
 
-      const dist = Math.hypot(n2.x - n1.x, n2.z - n1.z);
+      const dx = n2.x - n1.x;
+      const dz = n2.z - n1.z;
+      const dist = Math.hypot(dx, dz);
       if (dist < 0.1) {
         this.advanceVehicle(v);
         continue;
@@ -46,40 +55,45 @@ export class TrafficSystem {
       if (v.progress >= 1.0) {
         this.advanceVehicle(v);
       } else {
-        const x = THREE.MathUtils.lerp(n1.x, n2.x, v.progress);
-        const y = THREE.MathUtils.lerp(n1.elevation, n2.elevation, v.progress) + 0.15;
-        const z = THREE.MathUtils.lerp(n1.z, n2.z, v.progress);
+        const angle = Math.atan2(dx, dz);
+        // Right-hand lane offset so cars drive neatly on their side of the dashed centerline
+        const laneOffset = 0.72;
+        const rightX = -Math.cos(angle) * laneOffset;
+        const rightZ = Math.sin(angle) * laneOffset;
+
+        const x = THREE.MathUtils.lerp(n1.x, n2.x, v.progress) + rightX;
+        const y = THREE.MathUtils.lerp(n1.elevation, n2.elevation, v.progress) + 0.1;
+        const z = THREE.MathUtils.lerp(n1.z, n2.z, v.progress) + rightZ;
 
         v.mesh.position.set(x, y, z);
-        const angle = Math.atan2(n2.x - n1.x, n2.z - n1.z);
         v.mesh.rotation.y = angle;
       }
 
-      // Headlight brightness at night
       v.headlights.forEach((h) => {
-        (h.material as THREE.MeshBasicMaterial).color.setHex(isNight ? 0xfffae6 : 0x475569);
+        (h.material as THREE.MeshBasicMaterial).color.setHex(isNight ? 0xfffae6 : 0xf8fafc);
       });
       v.taillights.forEach((t) => {
-        (t.material as THREE.MeshBasicMaterial).color.setHex(isNight ? 0xef4444 : 0x7f1d1d);
+        (t.material as THREE.MeshBasicMaterial).color.setHex(isNight ? 0xef4444 : 0xdc2626);
       });
     }
   }
 
   private advanceVehicle(v: Vehicle) {
+    const prevNodeId = v.currentNode.id;
     v.progress = 0;
     v.currentNode = v.targetNode;
 
     const nextIds = v.targetNode.connectedTo;
     if (nextIds.length === 0) {
-      // Dead end, despawn
       this.group.remove(v.mesh);
       const idx = this.vehicles.indexOf(v);
       if (idx !== -1) this.vehicles.splice(idx, 1);
       return;
     }
 
-    // Pick a random connected node
-    const nextId = nextIds[Math.floor(Math.random() * nextIds.length)];
+    // Prefer continuing forward rather than immediately U-turning if other roads exist
+    const forwardIds = nextIds.length > 1 ? nextIds.filter((id) => id !== prevNodeId) : nextIds;
+    const nextId = forwardIds[Math.floor(Math.random() * forwardIds.length)];
     const nextNode = this.roadSystem.nodes.get(nextId);
     if (!nextNode) {
       this.group.remove(v.mesh);
@@ -90,7 +104,7 @@ export class TrafficSystem {
     v.targetNode = nextNode;
   }
 
-  private trySpawnVehicle() {
+  private trySpawnVehicle(initialProgress = 0) {
     const node = this.roadSystem.getRandomNode();
     if (!node || node.connectedTo.length === 0) return;
 
@@ -99,50 +113,66 @@ export class TrafficSystem {
     if (!targetNode) return;
 
     const mesh = new THREE.Group();
+    const isTruck = Math.random() < 0.22;
     const color = this.carColors[Math.floor(Math.random() * this.carColors.length)];
 
-    // Car Body
-    const bodyGeo = new THREE.BoxGeometry(0.9, 0.45, 1.8);
-    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.6 });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.y = 0.25;
-    body.castShadow = true;
-    mesh.add(body);
+    if (isTruck) {
+      // Cute Low-Poly Delivery Truck
+      const cab = new THREE.Mesh(
+        new THREE.BoxGeometry(0.92, 0.75, 0.9),
+        new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 })
+      );
+      cab.position.set(0, 0.42, 0.7);
+      cab.castShadow = true;
+      mesh.add(cab);
 
-    // Cabin
-    const cabinGeo = new THREE.BoxGeometry(0.75, 0.35, 0.9);
-    const cabinMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.2, metalness: 0.8 });
-    const cabin = new THREE.Mesh(cabinGeo, cabinMat);
-    cabin.position.set(0, 0.55, -0.15);
-    mesh.add(cabin);
+      const cargo = new THREE.Mesh(
+        new THREE.BoxGeometry(0.98, 0.95, 1.8),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.55 })
+      );
+      cargo.position.set(0, 0.52, -0.55);
+      cargo.castShadow = true;
+      mesh.add(cargo);
+    } else {
+      // Cute Low-Poly Sedan
+      const bodyGeo = new THREE.BoxGeometry(0.88, 0.42, 1.75);
+      const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.1 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 0.24;
+      body.castShadow = true;
+      mesh.add(body);
 
-    // Headlights
+      const cabinGeo = new THREE.BoxGeometry(0.76, 0.34, 0.92);
+      const cabinMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.25, metalness: 0.2 });
+      const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+      cabin.position.set(0, 0.54, -0.1);
+      mesh.add(cabin);
+    }
+
     const hMat = new THREE.MeshBasicMaterial({ color: 0xfffae6 });
-    const hGeo = new THREE.PlaneGeometry(0.18, 0.12);
-    hGeo.rotateX(Math.PI / 2);
+    const hGeo = new THREE.BoxGeometry(0.18, 0.12, 0.04);
     const hl1 = new THREE.Mesh(hGeo, hMat);
-    hl1.position.set(-0.3, 0.25, 0.91);
+    hl1.position.set(-0.28, 0.26, isTruck ? 1.16 : 0.89);
     const hl2 = new THREE.Mesh(hGeo, hMat);
-    hl2.position.set(0.3, 0.25, 0.91);
+    hl2.position.set(0.28, 0.26, isTruck ? 1.16 : 0.89);
     mesh.add(hl1, hl2);
 
-    // Taillights
     const tMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
     const tl1 = new THREE.Mesh(hGeo, tMat);
-    tl1.position.set(-0.3, 0.25, -0.91);
+    tl1.position.set(-0.28, 0.26, isTruck ? -1.46 : -0.89);
     const tl2 = new THREE.Mesh(hGeo, tMat);
-    tl2.position.set(0.3, 0.25, -0.91);
+    tl2.position.set(0.28, 0.26, isTruck ? -1.46 : -0.89);
     mesh.add(tl1, tl2);
 
-    mesh.position.set(node.x, node.elevation + 0.15, node.z);
+    mesh.position.set(node.x, node.elevation + 0.1, node.z);
     this.group.add(mesh);
 
     this.vehicles.push({
       mesh,
       currentNode: node,
       targetNode,
-      progress: 0,
-      speed: 6.0 + Math.random() * 4.0,
+      progress: initialProgress,
+      speed: 5.5 + Math.random() * 3.5,
       headlights: [hl1, hl2],
       taillights: [tl1, tl2],
     });

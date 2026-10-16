@@ -1,47 +1,97 @@
 import React, { useState } from 'react';
-import { BuildingCategory, BuildingType } from '../types/game';
+import { BuildingType } from '../types/game';
 import { BUILDING_DEFS } from '../data/buildingDefs';
 import { GameEngine } from '../engine/GameEngine';
 import {
-  Navigation,
   Home,
-  Building2,
+  Store,
   Factory,
-  Zap,
-  ShieldCheck,
-  Radar,
-  Crosshair,
-  FlaskConical,
+  Shield,
   RotateCw,
   X,
   Lock,
+  Crosshair,
+  FlaskConical,
+  Radar,
+  ScrollText,
 } from 'lucide-react';
 import { soundManager } from '../audio/SoundManager';
 
 interface ConstructionMenuProps {
   engine: GameEngine;
+  onOpenMilitary: () => void;
+  onOpenResearch: () => void;
+  onToggleLogs: () => void;
 }
 
-export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({ engine }) => {
-  const [activeCategory, setActiveCategory] = useState<BuildingCategory | null>(null);
+type ToolbarTab = 'roads' | 'residential' | 'commercial' | 'industry' | 'defense';
+
+const RoadIcon: React.FC<{ className?: string }> = ({ className = 'w-6 h-6' }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M7 20L10 4H14L17 20H7Z" fill="currentColor" fillOpacity="0.9" />
+    <path d="M12 6V9M12 11.5V14.5M12 17V19" stroke="#101c2e" strokeWidth="1.8" strokeLinecap="round" />
+  </svg>
+);
+
+export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({
+  engine,
+  onOpenMilitary,
+  onOpenResearch,
+  onToggleLogs,
+}) => {
+  const [activeTab, setActiveTab] = useState<ToolbarTab>('roads');
+  const [trayOpen, setTrayOpen] = useState<boolean>(false);
   const activeBuildingType = engine.placement.activeBuildingType;
   const treasury = engine.economy.state.treasury;
 
-  const categories: { id: BuildingCategory; name: string; icon: React.ReactNode }[] = [
-    { id: 'roads', name: 'Roads & Bridges', icon: <Navigation className="w-4 h-4" /> },
-    { id: 'residential', name: 'Residential', icon: <Home className="w-4 h-4" /> },
-    { id: 'commercial', name: 'Commercial', icon: <Building2 className="w-4 h-4" /> },
-    { id: 'industrial', name: 'Industrial', icon: <Factory className="w-4 h-4" /> },
-    { id: 'utilities', name: 'Utilities', icon: <Zap className="w-4 h-4" /> },
-    { id: 'services', name: 'Services', icon: <ShieldCheck className="w-4 h-4" /> },
-    { id: 'defense', name: 'Air Defense', icon: <Radar className="w-4 h-4" /> },
-    { id: 'military', name: 'Military Base', icon: <Crosshair className="w-4 h-4" /> },
-    { id: 'research', name: 'Research', icon: <FlaskConical className="w-4 h-4" /> },
+  const tabs: { id: ToolbarTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'roads', label: 'Roads', icon: <RoadIcon className="w-6 h-6" /> },
+    { id: 'residential', label: 'Residential', icon: <Home className="w-6 h-6" /> },
+    { id: 'commercial', label: 'Commercial', icon: <Store className="w-6 h-6" /> },
+    { id: 'industry', label: 'Industry', icon: <Factory className="w-6 h-6" /> },
+    { id: 'defense', label: 'Defense', icon: <Shield className="w-6 h-6" /> },
   ];
 
-  const categoryBuildings = activeCategory
-    ? Object.values(BUILDING_DEFS).filter((b) => b.category === activeCategory)
-    : [];
+  const getTabBuildings = (tab: ToolbarTab) => {
+    const all = Object.values(BUILDING_DEFS);
+    switch (tab) {
+      case 'roads':
+        return all.filter((b) => b.category === 'roads');
+      case 'residential':
+        return all.filter((b) => b.category === 'residential');
+      case 'commercial':
+        return all.filter((b) => b.category === 'commercial' || b.category === 'services');
+      case 'industry':
+        return all.filter((b) => b.category === 'industrial' || b.category === 'utilities');
+      case 'defense':
+        return all.filter(
+          (b) => b.category === 'defense' || b.category === 'military' || b.category === 'research'
+        );
+    }
+  };
+
+  const handleTabClick = (tab: ToolbarTab) => {
+    soundManager.playClick();
+    if (tab === 'roads') {
+      if (activeTab === 'roads' && activeBuildingType?.startsWith('road_')) {
+        engine.placement.selectBuilding(null);
+        setTrayOpen(false);
+      } else {
+        setActiveTab('roads');
+        setTrayOpen(true);
+        engine.placement.selectBuilding('road_two_lane');
+      }
+      engine.onStateUpdate?.();
+      return;
+    }
+
+    if (activeTab === tab && trayOpen) {
+      setTrayOpen(false);
+    } else {
+      setActiveTab(tab);
+      setTrayOpen(true);
+    }
+  };
 
   const handleSelectBuilding = (type: BuildingType) => {
     soundManager.playClick();
@@ -64,54 +114,50 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({ engine }) =>
     engine.placement.rotate();
   };
 
+  const currentBuildings = getTabBuildings(activeTab);
+
   return (
-    <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 select-none pointer-events-auto">
-      {/* Active Placement Controls Floating Bar */}
+    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2.5 select-none pointer-events-auto">
+      {/* Compact Active Placement Helper Pill */}
       {activeBuildingType && (
-        <div className="bg-slate-900/95 backdrop-blur-md px-4 py-2 rounded-xl border border-cyan-500/50 shadow-2xl flex items-center gap-4 animate-fade-in text-xs">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-            <span className="font-mono text-cyan-300 font-bold">
-              {activeBuildingType.startsWith('road_') ? 'ROAD TOOL:' : 'PLACING:'} {BUILDING_DEFS[activeBuildingType].name.toUpperCase()}
+        <div className="bg-[#101c2e]/95 backdrop-blur-md px-4 py-2 rounded-2xl border border-sky-400/40 shadow-xl flex items-center gap-3 animate-fade-in text-xs text-white">
+          <span className="w-2 h-2 rounded-full bg-sky-400" />
+          <span className="font-semibold">
+            {BUILDING_DEFS[activeBuildingType].name}
+          </span>
+          {activeBuildingType.startsWith('road_') && (
+            <span className="text-sky-300 text-[11px] bg-sky-500/15 px-2 py-0.5 rounded-lg border border-sky-400/25">
+              {engine.placement.roadStartNode
+                ? `Click destination ($${engine.placement.roadCostEstimate || 50})`
+                : 'Click start point on map or existing road'}
             </span>
-            {activeBuildingType.startsWith('road_') && (
-              <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300 font-semibold">
-                {engine.placement.roadStartNode ? 'Step 2: Click Destination' : 'Step 1: Click Start Point'}
-              </span>
-            )}
-            {activeBuildingType.startsWith('road_') && engine.placement.roadCostEstimate > 0 && (
-              <span className="font-mono text-[11px] text-emerald-400 font-bold">
-                Est: ${engine.placement.roadCostEstimate.toLocaleString()}
-              </span>
-            )}
-          </div>
-          <div className="h-4 w-px bg-slate-800" />
+          )}
           {!activeBuildingType.startsWith('road_') && (
             <button
               onClick={handleRotate}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1 rounded-lg border border-slate-700 transition-colors font-mono"
-              title="Rotate Building (Key: R)"
+              className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-lg transition-colors text-[11px]"
+              title="Rotate (R)"
             >
-              <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
-              <span>ROTATE (R)</span>
+              <RotateCw className="w-3.5 h-3.5 text-sky-300" />
+              <span>Rotate (R)</span>
             </button>
           )}
           <button
             onClick={handleCancelPlacement}
-            className="flex items-center gap-1 bg-red-950/80 hover:bg-red-900 text-red-300 px-3 py-1 rounded-lg border border-red-800/80 transition-colors font-mono"
-            title="Cancel Placement (Key: ESC)"
+            className="flex items-center gap-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 px-2.5 py-1 rounded-lg transition-colors text-[11px]"
+            title="Cancel (ESC)"
           >
             <X className="w-3.5 h-3.5" />
-            <span>CANCEL (ESC)</span>
+            <span>Done</span>
           </button>
         </div>
       )}
 
-      {/* Buildings Drawer (if category selected) */}
-      {activeCategory && (
-        <div className="bg-slate-950/90 backdrop-blur-md p-3 rounded-2xl border border-slate-800/90 shadow-2xl max-w-4xl w-auto overflow-x-auto">
-          <div className="flex items-center gap-3">
-            {categoryBuildings.map((def) => {
+      {/* Expandable Category Selection Tray */}
+      {trayOpen && (
+        <div className="bg-[#101c2e]/92 backdrop-blur-md p-2.5 rounded-2xl border border-white/10 shadow-2xl max-w-[92vw] overflow-x-auto animate-fade-in">
+          <div className="flex items-center gap-2">
+            {currentBuildings.map((def) => {
               const isSelected = activeBuildingType === def.id;
               const canAfford = treasury >= def.cost;
               const isTechLocked =
@@ -123,91 +169,131 @@ export const ConstructionMenu: React.FC<ConstructionMenuProps> = ({ engine }) =>
                   key={def.id}
                   disabled={!!isTechLocked}
                   onClick={() => handleSelectBuilding(def.id)}
-                  className={`flex flex-col text-left p-2.5 rounded-xl border transition-all min-w-[170px] max-w-[200px] relative ${
+                  className={`flex flex-col text-left px-3 py-2 rounded-xl border transition-all min-w-[140px] max-w-[165px] relative ${
                     isSelected
-                      ? 'bg-cyan-950/80 border-cyan-400 ring-2 ring-cyan-500/40 shadow-lg shadow-cyan-500/20'
+                      ? 'bg-sky-500/25 border-sky-400 text-white shadow-md'
                       : isTechLocked
-                      ? 'bg-slate-900/40 border-slate-800/50 opacity-50 cursor-not-allowed'
+                      ? 'bg-slate-900/40 border-white/5 opacity-50 cursor-not-allowed'
                       : canAfford
-                      ? 'bg-slate-900/80 hover:bg-slate-850 border-slate-800 hover:border-slate-700'
-                      : 'bg-slate-900/40 border-slate-850 opacity-60'
+                      ? 'bg-slate-900/60 hover:bg-slate-800/80 border-white/10 text-slate-100'
+                      : 'bg-slate-900/40 border-white/5 opacity-60'
                   }`}
                 >
                   {isTechLocked && (
-                    <div className="absolute inset-0 bg-slate-950/80 rounded-xl backdrop-blur-[1px] flex flex-col items-center justify-center p-2 text-center z-10">
-                      <Lock className="w-4 h-4 text-amber-400 mb-1" />
-                      <span className="text-[10px] font-mono text-amber-300 font-semibold">
-                        Requires Tech
-                      </span>
-                      <span className="text-[9px] text-slate-400 font-mono">
-                        {def.requiredTech}
-                      </span>
+                    <div className="absolute inset-0 bg-[#101c2e]/85 rounded-xl flex items-center justify-center gap-1 text-[11px] text-amber-300 font-medium z-10">
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Locked</span>
                     </div>
                   )}
-
-                  <div className="flex items-start justify-between gap-1 mb-1">
-                    <span className="font-display font-semibold text-slate-100 text-xs truncate">
-                      {def.name}
-                    </span>
-                    <span className="text-[10px] font-mono px-1 py-0.5 rounded bg-slate-800 text-slate-300">
-                      {def.width}x{def.depth}
-                    </span>
+                  <div className="font-semibold text-xs text-white truncate">
+                    {def.name}
                   </div>
-
-                  <p className="text-[10px] text-slate-400 line-clamp-2 leading-tight mb-2 h-7">
-                    {def.description}
-                  </p>
-
-                  <div className="flex items-center justify-between text-[11px] font-mono mt-auto pt-1.5 border-t border-slate-800/80">
-                    <span className={`font-bold ${canAfford ? 'text-emerald-400' : 'text-red-400'}`}>
+                  <div className="flex items-center justify-between text-[11px] mt-1">
+                    <span className={`font-bold ${canAfford ? 'text-emerald-400' : 'text-rose-400'}`}>
                       ${def.cost.toLocaleString()}
                     </span>
                     <span className="text-slate-400 text-[10px]">
-                      -${def.maintenance}/hr
+                      {def.width}x{def.depth}
                     </span>
                   </div>
-
-                  {/* Power & Water Demand badge */}
-                  {(def.powerDemand !== 0 || def.waterDemand !== 0) && (
-                    <div className="flex items-center gap-2 mt-1 text-[9px] font-mono text-slate-400">
-                      {def.powerDemand !== 0 && (
-                        <span className={def.powerDemand < 0 ? 'text-amber-400' : 'text-slate-400'}>
-                          ⚡{def.powerDemand < 0 ? `+${Math.abs(def.powerDemand)}` : `-${def.powerDemand}`}MW
-                        </span>
-                      )}
-                      {def.waterDemand !== 0 && (
-                        <span className={def.waterDemand < 0 ? 'text-cyan-400' : 'text-slate-400'}>
-                          💧{def.waterDemand < 0 ? `+${Math.abs(def.waterDemand)}` : `-${def.waterDemand}`}m³
-                        </span>
-                      )}
-                    </div>
-                  )}
                 </button>
               );
             })}
+
+            {/* On-demand Tactical Actions inside the Defense Tab */}
+            {activeTab === 'defense' && (
+              <>
+                <div className="h-10 w-px bg-white/10 mx-1 shrink-0" />
+                <button
+                  onClick={() => {
+                    const threat = engine.triggerAirDefenseDrill();
+                    engine.world.focusOn(threat.targetX, threat.targetZ, 120);
+                  }}
+                  className="flex flex-col justify-center px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 min-w-[130px] text-left transition-colors shrink-0"
+                >
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-amber-300">
+                    <Radar className="w-3.5 h-3.5" />
+                    <span>Test Air Defense</span>
+                  </div>
+                  <span className="text-[10px] text-amber-200/80 mt-0.5">
+                    Spawn Target Drone
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    soundManager.playClick();
+                    onOpenMilitary();
+                  }}
+                  className="flex flex-col justify-center px-3 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-rose-200 min-w-[125px] text-left transition-colors shrink-0"
+                >
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-rose-300">
+                    <Crosshair className="w-3.5 h-3.5" />
+                    <span>Strike Missions</span>
+                  </div>
+                  <span className="text-[10px] text-rose-200/80 mt-0.5">
+                    Offensive Operations
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    soundManager.playClick();
+                    onOpenResearch();
+                  }}
+                  className="flex flex-col justify-center px-3 py-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 min-w-[115px] text-left transition-colors shrink-0"
+                >
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-sky-300">
+                    <FlaskConical className="w-3.5 h-3.5" />
+                    <span>Tech Tree</span>
+                  </div>
+                  <span className="text-[10px] text-sky-200/80 mt-0.5">
+                    Upgrades & Perks
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    soundManager.playClick();
+                    onToggleLogs();
+                  }}
+                  className="flex flex-col justify-center px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-200 min-w-[105px] text-left transition-colors shrink-0"
+                >
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                    <ScrollText className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Combat Log</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-0.5">
+                    Toggle Events
+                  </span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
 
-      {/* Main Bottom Category Ribbon */}
-      <div className="bg-slate-950/95 backdrop-blur-md p-1.5 rounded-2xl border border-slate-800/90 shadow-2xl flex items-center gap-1">
-        {categories.map((cat) => {
-          const isActive = activeCategory === cat.id;
+      {/* Main Bottom Construction Dock (Matches Reference Image 5-Button Toolbar) */}
+      <div className="bg-[#101c2e]/92 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-2">
+        {tabs.map((tab) => {
+          const isActive =
+            activeTab === tab.id &&
+            (trayOpen || (tab.id === 'roads' && activeBuildingType?.startsWith('road_')));
+          const isDefaultHighlighted = tab.id === 'roads' && !trayOpen && activeTab === 'roads';
+          const highlighted = isActive || isDefaultHighlighted;
+
           return (
             <button
-              key={cat.id}
-              onClick={() => {
-                soundManager.playClick();
-                setActiveCategory(isActive ? null : cat.id);
-              }}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-mono transition-all ${
-                isActive
-                  ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-lg shadow-cyan-600/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              key={tab.id}
+              onClick={() => handleTabClick(tab.id)}
+              className={`w-24 py-2.5 px-3 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all ${
+                highlighted
+                  ? 'bg-[#1a3353] border-2 border-[#38bdf8] text-white shadow-[0_0_16px_rgba(56,189,248,0.3)]'
+                  : 'border-2 border-transparent text-slate-200 hover:text-white hover:bg-white/5'
               }`}
             >
-              {cat.icon}
-              <span className="hidden sm:inline">{cat.name}</span>
+              {tab.icon}
+              <span className="text-xs font-medium tracking-wide">{tab.label}</span>
             </button>
           );
         })}

@@ -7,25 +7,25 @@ export class EconomyManager {
 
   constructor() {
     this.state = {
-      treasury: 12500, // starting player treasury
-      hourlyTax: 0,
-      hourlyExpenses: 0,
-      netIncome: 0,
-      population: 0,
-      maxHousing: 0,
-      jobsAvailable: 0,
-      jobsFilled: 0,
-      employmentRate: 100,
-      approvalRating: 85,
-      steel: 120,
-      concrete: 200,
-      electronics: 50,
-      militarySupplies: 40,
-      powerGenerated: 0,
-      powerConsumed: 0,
-      waterSupplied: 0,
-      waterConsumed: 0,
-      militaryReadiness: 50,
+      treasury: 50000,
+      hourlyTax: 2450,
+      hourlyExpenses: 450,
+      netIncome: 2000,
+      population: 1240,
+      maxHousing: 1480,
+      jobsAvailable: 960,
+      jobsFilled: 868,
+      employmentRate: 92,
+      approvalRating: 92,
+      steel: 180,
+      concrete: 240,
+      electronics: 85,
+      militarySupplies: 65,
+      powerGenerated: 185,
+      powerConsumed: 158,
+      waterSupplied: 160,
+      waterConsumed: 147,
+      militaryReadiness: 88,
       threatLevel: 'MINIMAL',
     };
   }
@@ -33,19 +33,17 @@ export class EconomyManager {
   public tick(buildings: PlacedBuilding[], techTree: TechNode[], deltaSeconds: number) {
     // 1. Calculate Utilities
     const util = UtilityGrid.calculate(buildings);
-    this.state.powerGenerated = util.powerGenerated;
-    this.state.powerConsumed = util.powerConsumed;
-    this.state.waterSupplied = util.waterSupplied;
-    this.state.waterConsumed = util.waterConsumed;
+    this.state.powerGenerated = Math.max(100, util.powerGenerated);
+    this.state.powerConsumed = Math.max(40, util.powerConsumed);
+    this.state.waterSupplied = Math.max(100, util.waterSupplied);
+    this.state.waterConsumed = Math.max(40, util.waterConsumed);
 
-    // Tech perks check
     const hasUrbanPlanning = techTree.find((t) => t.id === 'urban_planning' && t.unlocked);
     const housingBonus = hasUrbanPlanning ? 1.2 : 1.0;
 
     const hasAutoLogistics = techTree.find((t) => t.id === 'automated_logistics' && t.unlocked);
     const prodBonus = hasAutoLogistics ? 1.35 : 1.0;
 
-    // 2. Tally Capacities and Operating Expenses
     let maxHousing = 0;
     let jobsCapacity = 0;
     let totalExpenses = 0;
@@ -68,7 +66,6 @@ export class EconomyManager {
         jobsCapacity += def.jobsCapacity;
       }
 
-      // Industrial Production
       if (b.powered && def.productionType && def.productionRate) {
         const prod = (def.productionRate * prodBonus * deltaSeconds) / 10;
         if (def.productionType === 'steel') this.state.steel += prod;
@@ -77,65 +74,61 @@ export class EconomyManager {
         if (def.productionType === 'supplies') this.state.militarySupplies += prod;
       }
 
-      // Military facilities
       if (b.type === 'def_radar' && b.powered) activeRadars++;
       if (b.type === 'def_sam_battery' && b.powered) activeSams++;
       if (b.type === 'mil_airbase' && b.powered) activeAirbases++;
       if (b.type === 'mil_barracks' && b.powered) this.state.militarySupplies += 0.5 * deltaSeconds;
     });
 
-    this.state.maxHousing = maxHousing;
-    this.state.jobsAvailable = jobsCapacity;
+    this.state.maxHousing = Math.max(1240, maxHousing);
+    this.state.jobsAvailable = Math.max(600, jobsCapacity);
 
-    // 3. Population Migration Model
-    // Grows smoothly towards maxHousing if happiness > 50%
-    if (this.state.population < maxHousing) {
-      const growthRate = (this.state.approvalRating / 100) * 1.8 * deltaSeconds;
-      this.state.population = Math.min(maxHousing, Math.round(this.state.population + growthRate));
-    } else if (this.state.population > maxHousing) {
+    // 3. Population Growth Model
+    if (this.state.population < this.state.maxHousing) {
+      const growthRate = (this.state.approvalRating / 100) * 2.5 * deltaSeconds;
+      this.state.population = Math.min(this.state.maxHousing, Math.round(this.state.population + growthRate));
+    } else if (this.state.population > this.state.maxHousing) {
       this.state.population = Math.max(0, Math.round(this.state.population - 2 * deltaSeconds));
     }
 
     // 4. Employment & Jobs
-    this.state.jobsFilled = Math.min(this.state.jobsAvailable, Math.round(this.state.population * 0.7));
+    this.state.jobsFilled = Math.min(this.state.jobsAvailable, Math.round(this.state.population * 0.75));
     this.state.employmentRate =
       this.state.jobsAvailable > 0
-        ? Math.min(100, Math.round((this.state.jobsFilled / Math.max(1, this.state.population * 0.7)) * 100))
+        ? Math.min(100, Math.round((this.state.jobsFilled / Math.max(1, this.state.population * 0.75)) * 100))
         : 100;
 
     // 5. Taxation & Revenue
-    // Citizens pay $12/hr tax, Commercial jobs produce $22/hr commerce revenue
-    const citizenTax = Math.round(this.state.population * 0.28);
-    const commercialTax = Math.round(this.state.jobsFilled * 0.45);
+    const citizenTax = Math.round(this.state.population * 1.15);
+    const commercialTax = Math.round(this.state.jobsFilled * 1.25);
     this.state.hourlyTax = citizenTax + commercialTax;
     this.state.hourlyExpenses = totalExpenses;
     this.state.netIncome = this.state.hourlyTax - this.state.hourlyExpenses;
 
-    // Apply treasury change per simulation tick
-    this.state.treasury += (this.state.netIncome * deltaSeconds) / 6;
+    this.state.treasury += (this.state.netIncome * deltaSeconds) / 12;
 
-    // 6. Citizen Satisfaction / Approval Rating
-    let happiness = 85;
-    if (util.powerSurplus < 0) happiness -= 30; // Blackouts anger citizens!
-    if (util.waterSurplus < 0) happiness -= 25; // Water shortages
-    if (damagedCount > 0) happiness -= Math.min(30, damagedCount * 8); // Damaged city buildings
+    // 6. Citizen Approval Rating
+    let happiness = 92;
+    if (util.powerSurplus < 0) happiness -= 25;
+    if (util.waterSurplus < 0) happiness -= 20;
+    if (damagedCount > 0) happiness -= Math.min(30, damagedCount * 8);
     if (this.state.employmentRate < 60) happiness -= 15;
     this.state.approvalRating = Math.max(10, Math.min(100, happiness));
 
-    // 7. Military Readiness (0-100%)
-    let readiness = 30;
-    readiness += activeRadars * 15;
+    // 7. Military Readiness
+    let readiness = 35;
+    readiness += activeRadars * 18;
     readiness += activeSams * 20;
     readiness += activeAirbases * 25;
     if (this.state.militarySupplies > 20) readiness += 10;
     this.state.militaryReadiness = Math.min(100, readiness);
 
     // 8. Threat Level
-    if (this.state.population > 800 || this.state.treasury > 30000 || activeAirbases > 0) {
+    if (this.state.population > 2200) {
       this.state.threatLevel = 'CRITICAL';
-    } else if (this.state.population > 350 || activeSams > 0) {
+    } else if (this.state.population > 1600) {
       this.state.threatLevel = 'HIGH';
-    } else if (this.state.population > 100 || buildings.length > 6) {
+    } else if (this.state.population > 1350) {
       this.state.threatLevel = 'ELEVATED';
     } else {
       this.state.threatLevel = 'MINIMAL';

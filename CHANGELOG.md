@@ -2,99 +2,45 @@
 
 All notable changes to **WATCH OUT** are documented in this file.
 
+## [2.0.0] - 2026-10-16 — Clean, Colorful Isometric City-Builder Redesign
+
+### 1. Art Direction & Visual Overhaul
+- **Isometric Camera & Readable City Blocks**: Switched to a narrow-FOV (26°) isometric camera projection with clear depth, parallel street lines, and smooth pan/zoom/orbit navigation.
+- **Bright, Cohesive Palette**: Redesigned terrain, water, roads, and buildings around a sunlit palette of azure/turquoise water, golden sandy beaches, vibrant spring meadow greens, soft slate-grey roads, and pastel architectural materials.
+- **Smooth Sculpted Terrain**: Eliminated noisy procedural ground grain textures and uneven bumps in favor of a flat, smooth central peninsula and eastern bank separated by a river channel and coastal harbor bay, framed by sculpted rocky hills.
+- **Simple, Elegant Low-Poly 3D Models**:
+  - **Residential**: Cozy pastel homes with coral-red, cerulean-blue, and warm-orange pitched roofs, fenced yards, and mid-rise pastel apartment blocks.
+  - **Commercial & Civic**: Colorful red, yellow, and white storefronts, sleek azure-blue glass office towers with crisp white mullions, a central park with a circular fountain and cherry-blossom trees, and a white-and-turquoise hospital with a rooftop helipad.
+  - **Industrial & Harbor**: Clean manufacturing factory with a red-and-white striped smokestack, logistics warehouse, waterfront harbor pier with stacked colorful shipping containers, red gantry crane, and moored yacht/corvette.
+  - **Military & Air Defense**: Fenced defense compound featuring a white spherical radome ("golf ball") radar tower on a tapered support structure, olive-green 8x8 SAM launcher trucks, and a northern tactical airbase.
+- **Varied Low-Poly Trees**: Layered forest-green conifers on hills, plump rounded deciduous trees along streets, and pastel-pink cherry blossom trees in parks and plazas.
+
+### 2. Genuinely Connected Roads & Intersections
+- **Mid-Segment T-Junction Splitting**: Clicking on the middle of any existing road segment automatically splits the segment and inserts a shared `RoadNode` so T-junctions are topologically and visually connected.
+- **Automatic 4-Way Crossroads**: Drawing a road across an existing road automatically detects the intersection point, splits both segments, and links all four arms into a unified intersection node.
+- **Clean Trimmed Road Geometry**: Curbs and dashed white centerlines trim back cleanly at intersections, replaced by flush asphalt junction hubs, corner sidewalk fillets, and white zebra crosswalks without z-fighting.
+- **Right-Hand Lane Traffic**: Colorful low-poly sedans and delivery trucks drive in their proper right-hand lanes across connected streets and bridges.
+
+### 3. Authoritative Air-Defense Simulation
+- **Noise-Free Coverage Rings**: Radar and SAM range rings stay hidden during peaceful city building and appear only when placing/inspecting defense assets or during active threat alerts.
+- **Full Detection-to-Interception Loop**: Radars and SAM batteries detect incoming aerial threats, smoothly aim their 3D turrets in azimuth and pitch, draw subtle target-lock lines, launch visible white-and-orange interceptor missiles, and resolve mid-air engagements via swept-segment collision detection.
+- **One-Click Air Defense Drill**: Added a "Test Air Defense" action in the Defense toolbar and onboarding tutorial to spawn a live target drone at any time.
+
+### 4. Streamlined, Minimalist UI Design
+- **Compact Top Bar**: Displays the WATCH OUT brand emblem, essential resources (`$50,000` treasury, `1,240` population, `85%` power, `92%` water), date/time (`Apr 14, 2025 10:30 AM`), simulation speed controls (`Pause`, `Play`, `Fast`), and a clean Settings button.
+- **Single Friendly Tutorial Card**: Compact bottom-left onboarding card featuring a construction engineer avatar and concise step-by-step guidance.
+- **Simple 5-Button Bottom Toolbar**: Clean bottom dock (`Roads`, `Residential`, `Commercial`, `Industry`, `Defense`) with sky-blue active highlighting and on-demand building trays.
+- **Progressive Disclosure**: Advanced military panels, tech research, detailed statistics, and combat logs stay hidden until opened by the player.
+
+---
+
 ## [1.2.0] - 2026-10-15 — Major Graphics, UI/UX, Road System and Air Defense Overhaul
-
-### 1. Visual & Terrain Overhaul
-- **Multi-Octave Organic Landscape**: Replaced harsh and abrupt terrain edges with smooth, rolling elevations combining low-frequency continental swells and high-frequency ridge detail.
-- **Geological Shading & Splat Blending**: Implemented slope-dependent dynamic texturing separating sheer cliff rock faces from fertile meadow turf, beach sands, and alpine ridges with procedural micro-noise.
-- **Hydrological Meandering Channel**: Re-engineered river paths using smooth Hermite-eased profiles and gentle bank slopes to prevent water clipping through sharp cliffs.
-- **PBR Architectural Realism**: Upgraded building models from primitive colored blocks to detailed structures with recessed window embrasures, horizontal floor mullions, gabled roofs, balconies, and rooftop HVAC chillers and communication masts.
-- **Landmark Skyscraper**: Commissioned a high-rise commercial center featuring perimeter structural cross-bracing, crown rooftop equipment, and illuminated emergency helipad.
-
-### 2. High-Fidelity Military Infrastructure
-- **Phased-Array Early Warning Radar**: Replaced flat dishes with realistic 3D lattice truss gantries, parabolic microwave reflectors, and dual feeds rotating on an azimuth turntable.
-- **HEMTT Tactical SAM Battery**: Upgraded missile installations to an 8-wheel heavy extended mobility tactical truck platform equipped with a 360° rotating turret base, elevating pitch mount, and quad boxed interceptor canisters.
-- **Phalanx CIWS Point Defense**: Modeled after real-world close-in weapons systems with a radome search/track radar dome, traversing mount, and 6-barrel M61 Vulcan rotary cannon.
-- **Hardened Command Citadel & Bunkers**: Added reinforced blast shields, communication antennae, and sloped earth embankments.
-- **Joint Tactical Airbase**: Expanded airbase with runway threshold stripes, touchdown zone markings, taxiways, hardened aircraft blast shelters, and support hangars.
-
-### 3. Interactive Two-Point Road Construction & Smart Snapping
-- **Two-Point Drawing Mechanism**: Players now click an initial anchor point, view a dynamic continuous road preview displaying real-time length, orientation, and cost estimate, and click the destination to build.
-- **Continuous Chaining**: Completing a road segment automatically sets the end point as the new start anchor, enabling rapid road grid development without repeated tool clicks. Right-click or ESC cleanly ends drawing.
-- **Magnetic Endpoint Snapping**: Interactive road cursor automatically snaps to existing nearby road junctions within 7.5 units, highlighted with an animated glowing cyan target ring.
-- **Intersection Junction Patches**: Automatically generates circular asphalt junction caps at multi-road intersections, eliminating holes, gaps, and z-fighting.
-- **Bridge Pier Foundations & Lane Markings**: Elevated roads over water and valleys feature concrete support pylons, yellow centerline striping, and white outer lane borders.
-
-### 4. Authoritative Air Defense & Combat Simulation
-- **Continuous Threat Lifecycle States**: Replaced binary flags with an authoritative finite state machine: `UNDETECTED` -> `DETECTED` -> `TRACKED` -> `ENGAGED` -> `INTERCEPTED` -> `IMPACTED`.
-- **Target Tracking & Weapon Lock**: Defense batteries actively acquire detected targets, orienting their 3D turrets in azimuth and elevating their pitch mount directly toward incoming threats.
-- **Ammunition & Reload Cycle**: SAM batteries track remaining missiles (4 max), cycling into an 8-second realistic reload state once depleted, with visual UI reload gauges and combat logs.
-- **Swept-Segment Collision Detection**: Implemented continuous swept-volume proximity tests along interceptor trajectory vectors, eliminating high-speed missile tunneling through targets between simulation frames.
-- **Target Drone Training Drill**: Added a low-threat training drone spawner to guarantee players can observe their active defense systems in action during onboarding.
-
-### 5. Streamlined UI/UX & Progressive Disclosure
-- **Guided Onboarding Tutorial**: Implemented a non-intrusive, 7-step guided tactical tutorial card advancing dynamically on gameplay milestones (Roads -> Utilities -> Housing -> Economy -> Air Defense -> Interception Drill -> Offensive Missions). Fully skippable and replayable.
-- **Clutter Elimination**: Tactical help manual and secondary menus now default to collapsed on first load, eliminating the overwhelming multi-panel startup clutter.
-- **Top HUD Telemetry Modernization**: Streamlined primary resource telemetry with clean glassmorphic panels and an expandable drawer for secondary population and employment statistics.
-- **Interactive Threat Banner**: Threat warning bar now features direct engagement status indicators ("ENGAGED", "TARGET SPLASH") and a one-click "Focus Camera" button.
-- **Collapsible Radar Minimap**: Strategic minimap can be collapsed to maximize screen real estate, and allows direct click-to-pan teleportation to threats and coordinates.
+- Added multi-octave terrain, two-point road drawing, air-defense state machine, and 7-step tutorial.
 
 ---
 
 ## [1.1.0] - 2026-10-15
-
-### Core Gameplay & Systems Implemented
-- **3D Procedural World & Environment**:
-  - 600x600 unit procedural rolling terrain with height-based biomes: sandy shoreline, fertile green meadows, rocky cliffs, and snow-dusted alpine ridges.
-  - Meandering river basin flowing to a coastal deepwater bay with dynamic water wave animation.
-  - High-density instanced forests containing over 2,400 pine conifers, oak trees, and rock boulders.
-  - Smart vegetation clearing when constructing roads and buildings.
-- **RTS Camera & World Controls**:
-  - WASD / Arrow keys smooth pan with Shift boost.
-  - Smooth mouse wheel zoom spanning from satellite regional map overview to street level.
-  - Right-click camera orbit/tilt (azimuth and elevation angle).
-  - Middle-click camera panning.
-  - Terrain collision clamping to prevent underground camera clipping.
-  - Quick camera reset hotkey and focus-on-target functions.
-- **City Building & Road Networks**:
-  - Connected road graph system supporting straight roads, intersections, and bridges over water.
-  - Automatic bridge piers and safety railings when crossing water bodies.
-  - Interactive 3D placement cursor with 4-unit grid snapping, collision validation, and rotation (R key).
-  - 20+ specialized 3D buildings across 9 categories (Roads, Residential, Commercial, Industrial, Utilities, Services, Defense, Military, Research).
-  - Night window illumination with warm glowing facades and streetlights.
-- **Living City Simulation & Traffic**:
-  - Moving civilian traffic (cars, trucks) following road nodes with dynamic night headlights.
-  - Population growth model driven by housing capacity and citizen approval rating.
-  - Employment dynamics matching commercial and industrial jobs with residents.
-  - Utility distribution grid tracking power (MW) and water (m³/h), enforcing blackouts when capacity is exceeded.
-  - Industrial material production: Steel, Concrete, Microelectronics, and Military Supplies.
-- **Air Defense & Early Warning Radar**:
-  - Rotating 3D phased-array radar dishes projecting holographic coverage rings onto the terrain.
-  - Automatic detection and tracking of incoming hostile aerial threats.
-  - Patriot SAM air-defense batteries with traversed 3D turrets and homing interceptor missiles with smoke trails.
-  - Phalanx CIWS point-defense rapid-fire anti-drone protection.
-  - Mid-air interception explosions with shockwaves and debris.
-- **Hostile Threats & Rival Territory**:
-  - Hostile Sector Charlie compound featuring a fortified command citadel, red radar tower, AA batteries, and aircraft hangars.
-  - Hostile incursion waves: reconnaissance drones, terrain-hugging cruise missiles, and heavy bombers.
-  - Direct impact consequences: HP damage, fire/smoke plumes, power interruptions, and emergency sirens.
-- **Offensive Operations & Airbase Gameplay**:
-  - Full-length illuminated concrete runway airbase hosting 5th-gen multirole stealth fighters.
-  - Real takeoff sequences: taxiing, runway acceleration run, afterburner climb, mission flight, and landing approach.
-  - Operations command center with 4 tactical strike missions: Reconnaissance Flight, Munitions Depot Strike, Maritime Interdiction, and Citadel Assault.
-  - Bounties and rewards for successful operations.
-- **Technology Tree & Progression**:
-  - Four research branches: Civil, Industry, Defense, and Offense.
-  - Real unlockable capabilities including high-density zoning, nuclear power, and stealth fighters.
-- **Zero-Dependency Procedural Audio Engine**:
-  - Synthesized Web Audio API soundscape: radar pings, air raid sirens, rocket launches, Gatling fire, heavy explosions, jet engine whoosh, and ambient city wind.
-- **Tactical User Interface**:
-  - Top HUD telemetry header with treasury, power/water meters, and threat indicators.
-  - Bottom drawer construction menu with category tabs and stat cards.
-  - Building inspector for health, repair, and demolition.
-  - Real-time 2D radar strategic minimap with click-to-pan navigation.
-  - Collapsible tactical event log and high-priority alert banners.
-  - Full game state persistence with localStorage autosave and JSON export.
+- Initial 3D city-builder and air-defense simulation systems.
 
 ---
 

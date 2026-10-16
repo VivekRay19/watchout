@@ -5,7 +5,6 @@ import {
   CombatLogEntry,
   GameSettings,
   RoadNode,
-  RoadSegment,
   TechNode,
 } from '../types/game';
 import { BUILDING_DEFS } from '../data/buildingDefs';
@@ -50,18 +49,18 @@ export class GameEngine {
   public techTree: TechNode[] = JSON.parse(JSON.stringify(INITIAL_TECH_TREE));
   public combatLogs: CombatLogEntry[] = [];
   public selectedBuilding: PlacedBuilding | null = null;
-  public simSpeed: number = 1.0; // 0 = pause, 1 = normal, 2 = fast, 4 = ultra
+  public simSpeed: number = 1.0; // 0 = pause, 1 = normal, 2 = fast
   public gameTimeSeconds: number = 0;
 
   // Settings
   public settings: GameSettings = {
     musicVolume: 0.5,
     sfxVolume: 0.7,
-    ambienceVolume: 0.4,
+    ambienceVolume: 0.35,
     graphicsQuality: 'HIGH',
     shadowsEnabled: true,
-    timeOfDay: 14.0,
-    dayCycleSpeed: 0.2,
+    timeOfDay: 10.5,
+    dayCycleSpeed: 0.015,
   };
 
   // Animation & loop
@@ -77,7 +76,7 @@ export class GameEngine {
     this.canvas = canvas;
 
     // 1. Core World Systems
-    this.terrain = new TerrainGenerator(600, 600, 160);
+    this.terrain = new TerrainGenerator(600, 600, 200);
     this.world = new WorldManager(canvas, this.terrain);
     this.vegetation = new VegetationSystem(this.terrain, 2400);
     this.buildingRenderer = new BuildingRenderer();
@@ -109,17 +108,20 @@ export class GameEngine {
 
     this.initEventListeners();
     this.loadOrSetupStarterCity();
+    this.world.update(0.016, false);
+    this.world.renderer.render(this.world.scene, this.world.camera);
+    (window as unknown as { __watchoutEngine?: GameEngine }).__watchoutEngine = this;
     this.startLoop();
   }
 
   private initEventListeners() {
     this.canvas.addEventListener('click', (e) => {
-      // Audio unlock on user interaction
       soundManager.init();
 
       if (e.button !== 0) return;
+      // Ignore click if user was dragging the camera
+      if (this.world.wasDragging) return;
 
-      // If active building tool is selected, try to place
       if (this.placement.activeBuildingType) {
         if (this.placement.activeBuildingType.startsWith('road_')) {
           this.handleRoadPlacement();
@@ -129,7 +131,6 @@ export class GameEngine {
         return;
       }
 
-      // Otherwise inspect clicked building
       this.handleBuildingClick();
     });
 
@@ -137,7 +138,6 @@ export class GameEngine {
       e.preventDefault();
       if (this.placement.roadStartNode) {
         this.placement.cancelRoadDrawing();
-        this.log('INFO', 'Road drawing chain finished.');
       } else if (this.placement.activeBuildingType) {
         this.placement.selectBuilding(null);
       }
@@ -156,6 +156,7 @@ export class GameEngine {
         } else {
           this.placement.selectBuilding(null);
           this.selectedBuilding = null;
+          this.defenseSystem.showCoverageOverlay = false;
         }
         this.onStateUpdate?.();
       }
@@ -165,12 +166,10 @@ export class GameEngine {
   private loadOrSetupStarterCity() {
     const saved = SaveLoadManager.load();
     if (saved && saved.buildings && saved.buildings.length > 0) {
-      // Restore save
       this.economy.state = saved.economy;
       this.techTree = saved.techTree;
       this.settings = saved.settings;
 
-      // Restore road nodes & segments
       saved.roadNodes.forEach((n) => this.roadSystem.nodes.set(n.id, n));
       saved.roadSegments.forEach((s) => {
         const n1 = this.roadSystem.nodes.get(s.startNodeId);
@@ -180,46 +179,131 @@ export class GameEngine {
         }
       });
 
-      // Restore buildings
-      saved.buildings.forEach((b) => this.instantiateBuildingMesh(b));
+      saved.buildings.forEach((b) => {
+        this.instantiateBuildingMesh(b);
+        if (b.type === 'mil_airbase') {
+          this.airTraffic.registerAirbase(b.id, b.x, this.terrain.getHeight(b.x, b.z), b.z, b.rotation);
+        }
+      });
       this.buildings = saved.buildings;
 
-      this.log('SUCCESS', `Game successfully restored from saved checkpoint.`);
+      this.log('SUCCESS', 'Restored saved city checkpoint.');
     } else {
-      // Build starter town
       this.setupStarterCity();
     }
 
+    this.trafficSystem.seedTraffic(24);
     this.defenseSystem.updateRadarCoverageRings(this.buildings);
   }
 
   private setupStarterCity() {
-    // 1. Starter central road avenue
-    const n1 = this.roadSystem.addNode(-24, 0);
-    const n2 = this.roadSystem.addNode(0, 0);
-    const n3 = this.roadSystem.addNode(24, 0);
-    const n4 = this.roadSystem.addNode(0, -24);
-    const n5 = this.roadSystem.addNode(0, 24);
+    // 1. Build a crisp, connected city block grid and coastal/river bridges
+    const xCols = [-48, -24, 0, 24, 44];
+    const zRows = [-36, -12, 12, 34];
+    const gridNodes: Record<string, RoadNode> = {};
 
-    this.roadSystem.addSegment(n1, n2, 'road_two_lane');
-    this.roadSystem.addSegment(n2, n3, 'road_two_lane');
-    this.roadSystem.addSegment(n2, n4, 'road_two_lane');
-    this.roadSystem.addSegment(n2, n5, 'road_two_lane');
+    for (const x of xCols) {
+      for (const z of zRows) {
+        gridNodes[`${x}_${z}`] = this.roadSystem.addNode(x, z);
+      }
+    }
 
-    // 2. Starter Buildings
-    const starterList: { type: BuildingType; x: number; z: number }[] = [
-      { type: 'res_low', x: -12, z: 12 },
-      { type: 'res_low', x: 12, z: 12 },
-      { type: 'com_retail', x: 12, z: -12 },
-      { type: 'util_solar', x: -12, z: -12 },
-      { type: 'def_radar', x: -28, z: -28 },
-      { type: 'def_sam_battery', x: -20, z: -20 },
+    const connectRoad = (
+      n1: RoadNode,
+      n2: RoadNode,
+      type: 'road_two_lane' | 'road_highway' | 'road_bridge'
+    ) => {
+      this.vegetation.clearRoadCorridor(n1.x, n1.z, n2.x, n2.z, 4.5);
+      this.roadSystem.addSegment(n1, n2, type);
+    };
+
+    // Horizontal Avenues
+    for (const z of zRows) {
+      for (let i = 0; i < xCols.length - 1; i++) {
+        const n1 = gridNodes[`${xCols[i]}_${z}`];
+        const n2 = gridNodes[`${xCols[i + 1]}_${z}`];
+        const isMainAve = z === 34 || z === -12;
+        connectRoad(n1, n2, isMainAve ? 'road_highway' : 'road_two_lane');
+      }
+    }
+
+    // Vertical Streets
+    for (const x of xCols) {
+      for (let j = 0; j < zRows.length - 1; j++) {
+        const n1 = gridNodes[`${x}_${zRows[j]}`];
+        const n2 = gridNodes[`${x}_${zRows[j + 1]}`];
+        connectRoad(n1, n2, x === 0 ? 'road_highway' : 'road_two_lane');
+      }
+    }
+
+    // Eastern Defense & Medical District across the River Channel (connected by bridges!)
+    const eastN1 = this.roadSystem.addNode(84, -36);
+    const eastN2 = this.roadSystem.addNode(84, -12);
+    const eastN3 = this.roadSystem.addNode(84, 12);
+    const eastN4 = this.roadSystem.addNode(84, 34);
+
+    // Upper & Central River Bridges
+    connectRoad(gridNodes['44_-36'], eastN1, 'road_bridge');
+    connectRoad(gridNodes['44_-12'], eastN2, 'road_bridge');
+    // Lower Coastal Highway Bridge over the Bay
+    connectRoad(gridNodes['44_34'], eastN4, 'road_bridge');
+    // East Bank Avenue
+    connectRoad(eastN1, eastN2, 'road_two_lane');
+    connectRoad(eastN2, eastN3, 'road_two_lane');
+    connectRoad(eastN3, eastN4, 'road_two_lane');
+
+    // 2. Starter Buildings (Cohesive, colorful neighborhoods, park, harbor, and defense base)
+    const starterList: { id?: string; type: BuildingType; x: number; z: number }[] = [
+      // Central Park with Fountain & Cherry Blossoms
+      { id: 'bld_init_park', type: 'def_bunker', x: 12, z: 22 },
+
+      // Cozy Pastel Suburban Homes (paired nicely inside city blocks)
+      { type: 'res_low', x: -16, z: -26 },
+      { type: 'res_low', x: -8, z: -20 },
+      { type: 'res_low', x: 8, z: -26 },
+      { type: 'res_low', x: 16, z: -20 },
+      { type: 'res_low', x: -16, z: -2 },
+      { type: 'res_low', x: -8, z: 4 },
+      { type: 'res_low', x: -38, z: -26 },
+      { type: 'res_low', x: -30, z: -20 },
+      { type: 'res_low', x: -16, z: 20 },
+      { type: 'res_low', x: -8, z: 26 },
+
+      // Mid-Rise Pastel Apartments
+      { type: 'res_suburb', x: -36, z: 0 },
+      { type: 'res_suburb', x: -36, z: 22 },
+      { type: 'res_suburb', x: 12, z: -2 },
+
+      // Commercial Shops, Shopping Plaza & Sleek Blue Glass Office Towers
+      { type: 'com_mall', x: 34, z: 0 },
+      { type: 'com_skyscraper', x: 34, z: -24 },
+      { type: 'com_skyscraper', x: 34, z: 22 },
+      { type: 'com_retail', x: 12, z: 7 },
+
+      // Industrial Waterfront & Harbor Port (Left / Bottom-Left)
+      { type: 'ind_factory', x: -58, z: -6 },
+      { type: 'ind_warehouse', x: -58, z: 16 },
+      { type: 'mil_naval_dock', x: -12, z: 42 },
+
+      // Clean Utilities & City Hospital with Helipad
+      { type: 'util_power_plant', x: -58, z: -26 },
+      { type: 'util_water_pump', x: 34, z: -46 },
+      { type: 'serv_hospital', x: 14, z: 41 },
+
+      // Defense Compound (White Spherical Radome Tower & SAM Batteries on Right Bank)
+      { type: 'def_radar', x: 96, z: -20 },
+      { type: 'def_sam_battery', x: 96, z: -32 },
+      { type: 'def_sam_battery', x: 96, z: -4 },
+      { type: 'serv_hospital', x: 96, z: 18 },
+
+      // Tactical Airbase in Northern Sector
+      { type: 'mil_airbase', x: -16, z: -50 },
     ];
 
-    starterList.forEach((item) => {
+    starterList.forEach((item, idx) => {
       const def = BUILDING_DEFS[item.type];
       const building: PlacedBuilding = {
-        id: `bld_init_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        id: item.id || `bld_init_${idx}`,
         type: item.type,
         x: item.x,
         z: item.z,
@@ -233,13 +317,43 @@ export class GameEngine {
         active: true,
         level: 1,
       };
-      this.vegetation.clearVegetationAround(item.x, item.z, 14);
+      this.vegetation.clearVegetationAround(item.x, item.z, item.type === 'res_low' ? 3.8 : 7.0);
       this.instantiateBuildingMesh(building);
       this.buildings.push(building);
+
+      if (building.type === 'mil_airbase') {
+        this.airTraffic.registerAirbase(
+          building.id,
+          building.x,
+          this.terrain.getHeight(building.x, building.z),
+          building.z,
+          building.rotation
+        );
+      }
     });
 
-    this.log('INFO', 'Welcome to WATCH OUT! Commander, your central regional sector is established.');
-    this.log('ALERT', 'Satellite reconnaissance reports hostile military build-up in Sector Charlie.');
+    // Initial economy calculation matching reference HUD metrics ($50,000, +2,000/hr, 1,240, +80/hr, 85%, 92%)
+    this.economy.tick(this.buildings, this.techTree, 0.1);
+    this.economy.state.treasury = 50000;
+    this.economy.state.population = 1240;
+    this.economy.state.netIncome = 2000;
+    this.economy.state.powerGenerated = 320;
+    this.economy.state.powerConsumed = 265;
+    this.economy.state.waterSupplied = 280;
+    this.economy.state.waterConsumed = 248;
+    this.economy.state.approvalRating = 94;
+
+    this.log('INFO', 'Welcome to WATCH OUT! Expand your city blocks and protect the coastline.');
+  }
+
+  public triggerAirDefenseDrill() {
+    soundManager.init();
+    const threat = this.threatSystem.spawnScriptedTrainingThreat(this.buildings, (entry) =>
+      this.log(entry.type, entry.message)
+    );
+    this.defenseSystem.showCoverageOverlay = true;
+    this.onStateUpdate?.();
+    return threat;
   }
 
   private handleBuildingPlacement() {
@@ -247,7 +361,7 @@ export class GameEngine {
     const def = BUILDING_DEFS[this.placement.activeBuildingType];
 
     if (!this.economy.deductFunds(def.cost)) {
-      this.log('WARNING', `Insufficient Treasury! Need $${def.cost.toLocaleString()}`);
+      this.log('WARNING', `Insufficient funds! Need $${def.cost.toLocaleString()}`);
       return;
     }
 
@@ -257,53 +371,61 @@ export class GameEngine {
     this.instantiateBuildingMesh(building);
     this.buildings.push(building);
 
-    // If military airbase, register with air traffic system
     if (building.type === 'mil_airbase') {
-      this.airTraffic.registerAirbase(building.id, building.x, this.terrain.getHeight(building.x, building.z), building.z, building.rotation);
-      this.log('SUCCESS', `Joint Tactical Airbase commissioned! Multirole stealth fighter squadron active.`);
+      this.airTraffic.registerAirbase(
+        building.id,
+        building.x,
+        this.terrain.getHeight(building.x, building.z),
+        building.z,
+        building.rotation
+      );
+      this.log('SUCCESS', 'Tactical Airbase operational! Fighter squadron deployed.');
     }
 
     this.defenseSystem.updateRadarCoverageRings(this.buildings);
-    this.log('INFO', `Constructed ${def.name} at coordinates [${building.x}, ${building.z}].`);
+    this.log('INFO', `Built ${def.name}.`);
 
     this.onStateUpdate?.();
   }
 
+  private resolveCurrentRoadTargetNode(): RoadNode {
+    if (this.placement.snappedNode) {
+      return this.placement.snappedNode;
+    }
+    if (this.placement.snappedSegment) {
+      const split = this.roadSystem.splitSegmentAt(
+        this.placement.snappedSegment.segment.id,
+        this.placement.snappedSegment.x,
+        this.placement.snappedSegment.z
+      );
+      if (split) return split;
+    }
+    return this.roadSystem.addNode(this.placement.gridPos.x, this.placement.gridPos.z);
+  }
+
   private handleRoadPlacement() {
     if (!this.placement.activeBuildingType || !this.placement.activeBuildingType.startsWith('road_')) return;
-    const roadType = this.placement.activeBuildingType as any;
+    const roadType = this.placement.activeBuildingType as 'road_two_lane' | 'road_highway' | 'road_bridge';
 
-    // Step 1: Anchor start node
+    // Step 1: Anchor start node (supports snapping to existing nodes OR splitting existing road segments!)
     if (!this.placement.roadStartNode) {
-      if (this.placement.snappedNode) {
-        this.placement.roadStartNode = this.placement.snappedNode;
-      } else {
-        const startNode = this.roadSystem.addNode(this.placement.gridPos.x, this.placement.gridPos.z);
-        this.placement.roadStartNode = startNode;
-      }
+      this.placement.roadStartNode = this.resolveCurrentRoadTargetNode();
       soundManager.playClick();
-      this.log('INFO', 'Road anchor established. Click destination point to construct road segment.');
       this.onStateUpdate?.();
       return;
     }
 
     // Step 2: Connect to destination node
     const startNode = this.placement.roadStartNode;
-    let endNode: RoadNode;
-
-    if (this.placement.snappedNode) {
-      if (this.placement.snappedNode.id === startNode.id) return; // Cannot connect to self
-      endNode = this.placement.snappedNode;
-    } else {
-      endNode = this.roadSystem.addNode(this.placement.gridPos.x, this.placement.gridPos.z);
-    }
+    const endNode = this.resolveCurrentRoadTargetNode();
+    if (endNode.id === startNode.id) return;
 
     const dist = Math.hypot(endNode.x - startNode.x, endNode.z - startNode.z);
-    if (dist < 2.0) return; // Prevent zero-length road segments
+    if (dist < 2.0) return;
 
     const cost = this.placement.roadCostEstimate || 50;
     if (!this.economy.deductFunds(cost)) {
-      this.log('WARNING', `Insufficient Treasury! Road construction requires $${cost.toLocaleString()}`);
+      this.log('WARNING', `Insufficient funds! Road requires $${cost.toLocaleString()}`);
       return;
     }
 
@@ -311,9 +433,9 @@ export class GameEngine {
     this.vegetation.clearVegetationAround((startNode.x + endNode.x) / 2, (startNode.z + endNode.z) / 2, dist / 2 + 3);
     this.vegetation.clearVegetationAround(endNode.x, endNode.z, 6);
     soundManager.playPlace();
-    this.log('SUCCESS', `Constructed ${roadType === 'road_highway' ? 'Highway' : 'Avenue'} segment ($${cost}).`);
+    this.log('SUCCESS', `Connected road segment ($${cost}).`);
 
-    // Chain continuation: next road segment starts from this end node
+    // Chain continuation
     this.placement.roadStartNode = endNode;
     this.onStateUpdate?.();
   }
@@ -325,7 +447,6 @@ export class GameEngine {
 
     const intersects = this.world.raycaster.intersectObjects(meshes, true);
     if (intersects.length > 0) {
-      // Find top group
       let obj: THREE.Object3D | null = intersects[0].object;
       while (obj && !this.buildingMeshes.has(obj.name) && obj.parent) {
         obj = obj.parent;
@@ -334,6 +455,8 @@ export class GameEngine {
         const found = this.buildings.find((b) => b.id === obj!.name);
         if (found) {
           this.selectedBuilding = found;
+          this.defenseSystem.showCoverageOverlay =
+            found.type === 'def_radar' || found.type === 'def_sam_battery' || found.type === 'def_ciws';
           soundManager.playClick();
           this.onStateUpdate?.();
           return;
@@ -342,6 +465,7 @@ export class GameEngine {
     }
 
     this.selectedBuilding = null;
+    this.defenseSystem.showCoverageOverlay = false;
     this.onStateUpdate?.();
   }
 
@@ -370,13 +494,12 @@ export class GameEngine {
       this.selectedBuilding = null;
     }
 
-    // Refund 40% of building cost
-    const refund = Math.round(BUILDING_DEFS[building.type].cost * 0.4);
+    const refund = Math.round(BUILDING_DEFS[building.type].cost * 0.5);
     this.economy.addFunds(refund);
 
     soundManager.playDemolish();
     this.defenseSystem.updateRadarCoverageRings(this.buildings);
-    this.log('INFO', `Demolished ${BUILDING_DEFS[building.type].name}. Salvaged +$${refund}`);
+    this.log('INFO', `Demolished ${BUILDING_DEFS[building.type].name} (+$${refund}).`);
 
     this.onStateUpdate?.();
   }
@@ -387,21 +510,21 @@ export class GameEngine {
 
     const repairCost = Math.round((1 - building.health / building.maxHealth) * BUILDING_DEFS[building.type].cost * 0.5);
     if (repairCost > 0 && !this.economy.deductFunds(repairCost)) {
-      this.log('WARNING', `Insufficient Funds for repairs: Need $${repairCost}`);
+      this.log('WARNING', `Insufficient funds for repair ($${repairCost}).`);
       return;
     }
 
     building.health = building.maxHealth;
     building.damageFire = false;
     soundManager.playPlace();
-    this.log('SUCCESS', `Repaired ${BUILDING_DEFS[building.type].name} to full operational condition.`);
+    this.log('SUCCESS', `Repaired ${BUILDING_DEFS[building.type].name}.`);
     this.onStateUpdate?.();
   }
 
   public log(type: CombatLogEntry['type'], message: string) {
     const entry: CombatLogEntry = {
       id: `log_${Date.now()}_${Math.random()}`,
-      timestamp: new Date().toLocaleTimeString(),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       type,
       message,
     };
@@ -410,7 +533,6 @@ export class GameEngine {
     this.onStateUpdate?.();
   }
 
-  // Master Game Loop
   private startLoop() {
     const loop = (timestamp: number) => {
       if (this.isDestroyed) return;
@@ -437,7 +559,7 @@ export class GameEngine {
 
       // 4. Building Animations (Rotating Radars)
       this.buildingRenderer.animatedRadars.forEach((r) => {
-        r.rotation.y += delta * 1.5;
+        r.rotation.y += delta * 1.4;
       });
       this.buildingRenderer.updateNightLighting(this.world.isNight);
       this.roadSystem.updateNightLighting(this.world.isNight);
@@ -463,7 +585,10 @@ export class GameEngine {
         this.defenseSystem.update(
           simDelta,
           this.threatSystem.activeThreats,
-          (threatId) => this.threatSystem.removeThreat(threatId),
+          (threatId) => {
+            this.threatSystem.removeThreat(threatId);
+            this.economy.addFunds(250);
+          },
           (logEntry) => this.log(logEntry.type, logEntry.message)
         );
 
@@ -496,12 +621,12 @@ export class GameEngine {
               t.unlocked = true;
               t.researching = false;
               soundManager.playMissionSuccess();
-              this.log('SUCCESS', `TECHNOLOGY DISCOVERY: [${t.name}] research completed! ${t.perkDescription}`);
+              this.log('SUCCESS', `Research Complete: ${t.name} (${t.perkDescription})`);
             }
           }
         });
 
-        // 11. Economic Simulation Clock (ticks every 1.5 seconds)
+        // 11. Economic Simulation Clock
         this.simAccumulator += simDelta;
         if (this.simAccumulator >= 1.5) {
           this.economy.tick(this.buildings, this.techTree, this.simAccumulator);
@@ -530,7 +655,7 @@ export class GameEngine {
       this.settings
     );
     if (success) {
-      this.log('SUCCESS', 'Game state saved to local storage.');
+      this.log('SUCCESS', 'Game state saved.');
     }
     return success;
   }

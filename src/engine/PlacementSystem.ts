@@ -3,7 +3,7 @@ import { BuildingType, PlacedBuilding, RoadNode } from '../types/game';
 import { BUILDING_DEFS } from '../data/buildingDefs';
 import { TerrainGenerator } from './TerrainGenerator';
 import { VegetationSystem } from './VegetationSystem';
-import { RoadSystem } from './RoadSystem';
+import { RoadSystem, SegmentSnapResult } from './RoadSystem';
 import { soundManager } from '../audio/SoundManager';
 
 export class PlacementSystem {
@@ -14,9 +14,10 @@ export class PlacementSystem {
   public isValid: boolean = false;
   public gridPos: { x: number; z: number; y: number } = { x: 0, z: 0, y: 0 };
 
-  // Two-Point Interactive Road Placement
+  // Two-Point Interactive Road Placement & Segment Snapping
   public roadStartNode: RoadNode | null = null;
   public snappedNode: RoadNode | null = null;
+  public snappedSegment: SegmentSnapResult | null = null;
   public snapIndicator: THREE.Mesh;
   public roadPreviewGroup: THREE.Group;
   public roadCostEstimate: number = 0;
@@ -35,26 +36,26 @@ export class PlacementSystem {
     this.group.add(this.roadPreviewGroup);
 
     this.validMat = new THREE.MeshBasicMaterial({
-      color: 0x10b981,
+      color: 0x38bdf8,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.5,
       wireframe: false,
     });
 
     this.invalidMat = new THREE.MeshBasicMaterial({
       color: 0xef4444,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.5,
       wireframe: false,
     });
 
-    // Snapping indicator ring (Cyan glowing target)
-    const ringGeo = new THREE.RingGeometry(1.8, 2.5, 32);
+    // Clean snap target ring
+    const ringGeo = new THREE.RingGeometry(1.5, 2.2, 32);
     ringGeo.rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x06b6d4,
+      color: 0x38bdf8,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.9,
       side: THREE.DoubleSide,
     });
     this.snapIndicator = new THREE.Mesh(ringGeo, ringMat);
@@ -79,7 +80,6 @@ export class PlacementSystem {
     if (!type) return;
 
     if (type.startsWith('road_')) {
-      // Roads use the two-point road preview
       return;
     }
 
@@ -89,17 +89,33 @@ export class PlacementSystem {
 
     const group = new THREE.Group();
 
-    // Footprint bounding box
-    const boxGeo = new THREE.BoxGeometry(w, 2, d);
+    // Clean footprint pad preview
+    const boxGeo = new THREE.BoxGeometry(w, 1.6, d);
     const box = new THREE.Mesh(boxGeo, this.validMat);
-    box.position.y = 1;
+    box.position.y = 0.8;
     group.add(box);
 
+    // Subtle range circle preview when placing radar or air defense
+    const range = def.radarRadius || def.defenseRange;
+    if (range) {
+      const rangeGeo = new THREE.RingGeometry(range - 1.2, range, 64);
+      rangeGeo.rotateX(-Math.PI / 2);
+      const rangeMat = new THREE.MeshBasicMaterial({
+        color: def.radarRadius ? 0x38bdf8 : 0x22c55e,
+        transparent: true,
+        opacity: 0.35,
+        side: THREE.DoubleSide,
+      });
+      const rangeRing = new THREE.Mesh(rangeGeo, rangeMat);
+      rangeRing.position.y = 0.25;
+      group.add(rangeRing);
+    }
+
     // Direction indicator arrow
-    const arrowGeo = new THREE.ConeGeometry(0.8, 1.6, 3);
+    const arrowGeo = new THREE.ConeGeometry(0.7, 1.4, 3);
     arrowGeo.rotateX(-Math.PI / 2);
     const arrow = new THREE.Mesh(arrowGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    arrow.position.set(0, 2.2, d / 2 - 0.5);
+    arrow.position.set(0, 1.8, d / 2 - 0.5);
     group.add(arrow);
 
     this.cursorMesh = group;
@@ -116,6 +132,7 @@ export class PlacementSystem {
   public cancelRoadDrawing() {
     this.roadStartNode = null;
     this.snappedNode = null;
+    this.snappedSegment = null;
     this.snapIndicator.visible = false;
     this.roadCostEstimate = 0;
     while (this.roadPreviewGroup.children.length > 0) {
@@ -145,7 +162,6 @@ export class PlacementSystem {
     this.cursorMesh.visible = true;
     this.snapIndicator.visible = false;
 
-    // Snap to 4-unit grid
     const gridSize = 4;
     const snapX = Math.round(intersectionPoint.x / gridSize) * gridSize;
     const snapZ = Math.round(intersectionPoint.z / gridSize) * gridSize;
@@ -159,13 +175,10 @@ export class PlacementSystem {
     const w = def.width * 4;
     const d = def.depth * 4;
 
-    // Check validity
     let valid = true;
 
-    // Cost check
     if (playerCash < def.cost) valid = false;
 
-    // Terrain check
     const isWater = this.terrain.isWater(snapX, snapZ);
     if (this.activeBuildingType === 'mil_naval_dock') {
       const nearShore = this.terrain.isNearShoreline(snapX, snapZ);
@@ -174,7 +187,6 @@ export class PlacementSystem {
       if (isWater) valid = false;
     }
 
-    // Collision check with existing buildings
     const halfW = w / 2;
     const halfD = d / 2;
     for (const b of existingBuildings) {
@@ -202,25 +214,53 @@ export class PlacementSystem {
   private updateRoadCursor(point: THREE.Vector3, playerCash: number) {
     if (!this.roadSystem) return;
 
-    // Check for magnetic endpoint snapping
-    const snap = this.roadSystem.findSnapNode(point.x, point.z, 7.5);
-    this.snappedNode = snap;
+    // 1. Check for existing road node snap first, then mid-segment snap
+    const nodeSnap = this.roadSystem.findSnapNode(point.x, point.z, 6.0);
+    const segSnap = !nodeSnap ? this.roadSystem.findSnapSegment(point.x, point.z, 4.5) : null;
 
-    let targetX = snap ? snap.x : Math.round(point.x / 4) * 4;
-    let targetZ = snap ? snap.z : Math.round(point.z / 4) * 4;
-    let targetY = snap ? snap.elevation : this.terrain.getHeight(targetX, targetZ);
+    this.snappedNode = nodeSnap;
+    this.snappedSegment = segSnap;
+
+    let targetX: number;
+    let targetZ: number;
+    let targetY: number;
+
+    if (nodeSnap) {
+      targetX = nodeSnap.x;
+      targetZ = nodeSnap.z;
+      targetY = nodeSnap.elevation;
+    } else if (segSnap) {
+      targetX = segSnap.x;
+      targetZ = segSnap.z;
+      targetY = segSnap.elevation;
+    } else {
+      targetX = Math.round(point.x / 4) * 4;
+      targetZ = Math.round(point.z / 4) * 4;
+
+      // Orthogonal assist when drawing from a start node
+      if (this.roadStartNode) {
+        const adx = Math.abs(targetX - this.roadStartNode.x);
+        const adz = Math.abs(targetZ - this.roadStartNode.z);
+        if (adx < 4 && adz >= 4) targetX = this.roadStartNode.x;
+        if (adz < 4 && adx >= 4) targetZ = this.roadStartNode.z;
+      }
+
+      const rawY = this.terrain.getHeight(targetX, targetZ);
+      targetY = this.terrain.isWater(targetX, targetZ)
+        ? Math.max(this.terrain.plateauHeight + 0.12, this.terrain.waterLevel + 1.72)
+        : rawY + 0.06;
+    }
 
     this.gridPos = { x: targetX, z: targetZ, y: targetY };
 
-    // Update snap indicator
-    if (snap) {
-      this.snapIndicator.visible = true;
-      this.snapIndicator.position.set(snap.x, snap.elevation + 0.12, snap.z);
-    } else {
-      this.snapIndicator.visible = false;
-    }
+    // Show clean snap ring indicator at cursor
+    this.snapIndicator.visible = true;
+    this.snapIndicator.position.set(targetX, targetY + 0.1, targetZ);
+    (this.snapIndicator.material as THREE.MeshBasicMaterial).color.setHex(
+      nodeSnap || segSnap ? 0x22c55e : 0x38bdf8
+    );
 
-    // If start node is selected, render dynamic continuous road preview
+    // Clear and rebuild road preview segment
     while (this.roadPreviewGroup.children.length > 0) {
       this.roadPreviewGroup.remove(this.roadPreviewGroup.children[0]);
     }
@@ -238,7 +278,7 @@ export class PlacementSystem {
         this.roadCostEstimate = Math.max(50, Math.round((length / 10) * 50));
         this.isValid = playerCash >= this.roadCostEstimate;
 
-        const width = this.activeBuildingType === 'road_highway' ? 5.2 : 3.6;
+        const width = this.activeBuildingType === 'road_highway' ? 4.4 : 3.4;
         const angle = Math.atan2(dx, dz);
 
         const previewGeo = new THREE.BoxGeometry(width, 0.18, length);
@@ -247,7 +287,7 @@ export class PlacementSystem {
 
         const midX = (sx + targetX) / 2;
         const midZ = (sz + targetZ) / 2;
-        const midY = (sy + targetY) / 2 + 0.08;
+        const midY = (sy + targetY) / 2 + 0.06;
 
         previewMesh.position.set(midX, midY, midZ);
         previewMesh.rotation.y = angle;
@@ -261,7 +301,6 @@ export class PlacementSystem {
         this.roadCostEstimate = 0;
       }
     } else {
-      // Just hovering before picking start node
       this.isValid = true;
       this.roadCostEstimate = 50;
     }
@@ -287,8 +326,7 @@ export class PlacementSystem {
       level: 1,
     };
 
-    // Clear trees around building footprint
-    const clearRadius = Math.max(def.width, def.depth) * 2.5;
+    const clearRadius = Math.max(def.width, def.depth) * 2.4;
     this.vegetation.clearVegetationAround(this.gridPos.x, this.gridPos.z, clearRadius);
 
     soundManager.playPlace();
