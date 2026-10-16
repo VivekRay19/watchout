@@ -2,6 +2,34 @@
 
 All notable changes to **WATCH OUT** are documented in this file.
 
+## [2.2.0] - 2026-10-16 — Game Engine, Flight Physics, Multi-Channel Air Defense & Municipal Banking Overhaul
+
+### 1. Spline Road Ribbon Generation & Terrain Cut-and-Fill Grading
+- **Corridor Cut-and-Fill Grading**: Added `gradeRoadCorridor` to `TerrainGenerator` and integrated it directly into `RoadSystem.addSegmentInternal`. When road segments are laid across sloping terrain, ground vertices within the road width are carved and leveled to match the road profile, with smooth Hermite shoulder transitions to eliminate terrain clipping.
+- **Slope Compliance & Bridge Promotion**: Enforced 25% maximum grade check on road segments; roads exceeding 25% grade or crossing waterways automatically upgrade to reinforced concrete girder bridges with piers.
+
+### 2. Deep City Economy & Municipal Banking System
+- **First Sovereign Bank of Metropolis (`BankingModal`)**: Added full loan management system featuring:
+  - 3 fictional loan tiers: *Short-Term Commercial Line of Credit* ($15,000 @ 4.5%), *Municipal Infrastructure Bond* ($45,000 @ 6.5%), and *National Strategic Defense Syndicate Loan* ($100,000 @ 9.0%).
+  - Amortized hourly repayment schedules deducted from city treasury, credit score dynamics (300 to 850 scale), and 0% penalty early repayment.
+  - Strict financial constraints: maximum 2 concurrent active loans and tier duplication lockouts.
+
+### 3. Layered Multi-Channel Air Defense Network
+- **Concurrent Tracking Channels**: Upgraded `DefenseSystem` from single-target lock to multi-channel fire-control. SAM batteries now maintain up to 4 concurrent tracking channels (`assignedTargetIds`), allowing simultaneous engagement of multiple incoming threats.
+- **Weapon System Differentiation**:
+  - Point-Defense CIWS (rapid-fire 0.8s, 60m range, single tracking channel).
+  - Multi-Target SAM Battery (4 concurrent tracking channels, 140m+ range).
+
+### 4. Arcade Flight Mechanics & 9-Stage Authoritative Flight State Machine
+- **Arcade Flight Model**: Overhauled `AirTrafficSystem` with 3 distinct fighter classes: Interceptor (speed 24-32), Multirole (speed 20-26), and Stealth (speed 28-36).
+- **9-Stage Flight Lifecycle**: Fighters now operate strictly through `PARKED` → `TAXIING` → `TAKEOFF` → `CLIMB` → `EN_ROUTE` → `ENGAGING` → `RETURNING` → `APPROACH` → `LANDING`, featuring climb pitch and bank-to-turn roll.
+
+### 5. Dynamic Difficulty Director & Automated Verification Suite
+- **DifficultyDirector**: Added adaptive threat wave coordinator scaling incursion frequency, swarm density, missile speed, and stealth penetrations based on population, GDP, and defensive readiness.
+- **Automated Verification**: Added test suite validating loan amortization, credit score tracking, multi-channel locks, and adaptive threat escalation.
+
+---
+
 ## [2.1.0] - 2026-10-16 — Living World, Graphics, Animation & Gameplay Upgrade
 
 ### 1. Terrain, Shoreline & Living Water Upgrade

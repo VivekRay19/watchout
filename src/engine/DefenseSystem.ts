@@ -145,37 +145,58 @@ export class DefenseSystem {
         return;
       }
 
+      const maxChannels = sam.type === 'def_ciws' ? 1 : 4;
+      sam.trackingChannels = maxChannels;
+
       const maxRange = (def.defenseRange || 140) + 30;
       const fireInterval = (def.fireRate || 2.2) * 1000;
       const lastFire = this.lastFireTimes.get(sam.id) || 0;
 
-      let bestThreat: Threat | null = null;
-      let bestDist = maxRange;
-
+      // Find up to maxChannels valid targets within range
+      const validThreats: { threat: Threat; dist: number }[] = [];
       threats.forEach((t) => {
         if (!t.detected || t.state === 'INTERCEPTED' || t.state === 'IMPACTED') return;
         const dist = Math.hypot(t.x - sam.x, t.z - sam.z);
-        if (dist <= bestDist) {
-          bestThreat = t;
-          bestDist = dist;
+        if (dist <= maxRange) {
+          validThreats.push({ threat: t, dist });
         }
       });
 
+      validThreats.sort((a, b) => a.dist - b.dist);
+      const activeTargets = validThreats.slice(0, maxChannels);
+
       const launcher = this.renderer.samLaunchers.find((l) => l.id === sam.id);
 
-      if (bestThreat) {
-        const target: Threat = bestThreat;
-        sam.assignedTargetId = target.id;
+      if (activeTargets.length > 0) {
+        sam.assignedTargetIds = activeTargets.map((at) => at.threat.id);
+        sam.assignedTargetId = activeTargets[0].threat.id;
         sam.defenseStatus = 'TRACKING';
-        if (target.state === 'DETECTED') {
-          target.state = 'TRACKED';
-        }
 
-        // Rotate 3D Turret in Azimuth & Pitch toward target
+        activeTargets.forEach(({ threat: target }) => {
+          if (target.state === 'DETECTED') {
+            target.state = 'TRACKED';
+          }
+
+          // Draw clean target lock line while tracking/engaging
+          const lockPoints = [
+            new THREE.Vector3(sam.x, 3.2, sam.z),
+            new THREE.Vector3(target.x, target.y, target.z),
+          ];
+          const lockGeo = new THREE.BufferGeometry().setFromPoints(lockPoints);
+          const lockMat = new THREE.LineBasicMaterial({
+            color: sam.type === 'def_ciws' ? 0xf87171 : 0x38bdf8,
+            transparent: true,
+            opacity: 0.45,
+          });
+          this.trackingLinesGroup.add(new THREE.Line(lockGeo, lockMat));
+        });
+
+        // Rotate 3D Turret toward the primary (closest) target
+        const primaryTarget = activeTargets[0].threat;
         if (launcher) {
-          const dx = target.x - sam.x;
-          const dz = target.z - sam.z;
-          const dy = target.y - 3.2;
+          const dx = primaryTarget.x - sam.x;
+          const dz = primaryTarget.z - sam.z;
+          const dy = primaryTarget.y - 3.2;
           const hDist = Math.max(1, Math.hypot(dx, dz));
 
           const worldAngle = Math.atan2(dx, dz);
@@ -185,44 +206,36 @@ export class DefenseSystem {
           launcher.pitchMount.rotation.x = -pitchAngle;
         }
 
-        // Draw clean target lock line while tracking/engaging
-        const lockPoints = [
-          new THREE.Vector3(sam.x, 3.2, sam.z),
-          new THREE.Vector3(target.x, target.y, target.z),
-        ];
-        const lockGeo = new THREE.BufferGeometry().setFromPoints(lockPoints);
-        const lockMat = new THREE.LineBasicMaterial({
-          color: 0x38bdf8,
-          transparent: true,
-          opacity: 0.45,
-        });
-        this.trackingLinesGroup.add(new THREE.Line(lockGeo, lockMat));
+        // Fire interceptor against highest-priority target with available engagement envelope
+        if (now - lastFire >= fireInterval) {
+          const engangable = activeTargets.find((at) => at.threat.interceptorsInFlight < 2);
+          if (engangable) {
+            const target = engangable.threat;
+            this.lastFireTimes.set(sam.id, now);
+            sam.ammo -= 1;
+            sam.defenseStatus = 'FIRING';
+            target.state = 'ENGAGED';
+            target.interceptorsInFlight += 1;
 
-        // Launch Interceptor Missile
-        if (now - lastFire >= fireInterval && target.interceptorsInFlight < 2) {
-          this.lastFireTimes.set(sam.id, now);
-          sam.ammo -= 1;
-          sam.defenseStatus = 'FIRING';
-          target.state = 'ENGAGED';
-          target.interceptorsInFlight += 1;
+            this.launchInterceptor(sam, target);
 
-          this.launchInterceptor(sam, target);
+            if (sam.type === 'def_ciws') {
+              soundManager.playCiwsFire();
+            } else {
+              soundManager.playMissileLaunch();
+            }
 
-          if (sam.type === 'def_ciws') {
-            soundManager.playCiwsFire();
-          } else {
-            soundManager.playMissileLaunch();
+            onLog({
+              id: `log_${Date.now()}_${Math.random()}`,
+              timestamp: new Date().toLocaleTimeString(),
+              type: 'INFO',
+              message: `${def.name} [CH-${activeTargets.indexOf(engangable) + 1}/${maxChannels}] launched interceptor at [${target.name}] (Range: ${Math.round(engangable.dist)}m)`,
+            });
           }
-
-          onLog({
-            id: `log_${Date.now()}_${Math.random()}`,
-            timestamp: new Date().toLocaleTimeString(),
-            type: 'INFO',
-            message: `${def.name} launched interceptor at [${target.name}] (Range: ${Math.round(bestDist)}m)`,
-          });
         }
       } else {
         sam.assignedTargetId = undefined;
+        sam.assignedTargetIds = [];
         sam.defenseStatus = 'IDLE';
 
         if (launcher) {

@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { Threat, PlacedBuilding, CombatLogEntry } from '../types/game';
 import { ParticleSystem } from './ParticleSystem';
+import { DifficultyDirector } from './DifficultyDirector';
 import { soundManager } from '../audio/SoundManager';
 
 export class ThreatSystem {
   public group: THREE.Group;
   public activeThreats: Threat[] = [];
+  public director: DifficultyDirector;
   private threatMeshes: Map<string, THREE.Group> = new Map();
   private particles: ParticleSystem;
   private lastSpawnTime = performance.now();
@@ -14,6 +16,7 @@ export class ThreatSystem {
 
   constructor(particles: ParticleSystem) {
     this.particles = particles;
+    this.director = new DifficultyDirector();
     this.group = new THREE.Group();
   }
 
@@ -23,7 +26,9 @@ export class ThreatSystem {
     buildings: PlacedBuilding[],
     threatLevel: 'MINIMAL' | 'ELEVATED' | 'HIGH' | 'CRITICAL',
     onBuildingDamaged: (buildingId: string, damage: number) => void,
-    onLog: (entry: CombatLogEntry) => void
+    onLog: (entry: CombatLogEntry) => void,
+    population = 4500,
+    readiness = 80
   ) {
     let interval = this.spawnInterval;
     if (threatLevel === 'ELEVATED') interval = 42000;
@@ -32,7 +37,7 @@ export class ThreatSystem {
 
     if (now - this.lastSpawnTime > interval) {
       this.lastSpawnTime = now;
-      this.spawnThreatWave(buildings, onLog);
+      this.spawnThreatWave(buildings, onLog, population, readiness);
     }
 
     for (let i = this.activeThreats.length - 1; i >= 0; i--) {
@@ -136,24 +141,13 @@ export class ThreatSystem {
     return threat;
   }
 
-  public spawnThreatWave(buildings: PlacedBuilding[], onLog: (entry: CombatLogEntry) => void) {
-    const roll = Math.random();
-    let type: Threat['type'] = 'drone_recon';
-    let speed = 15;
-    let altitude = 16;
-    let name = 'Recon Drone';
-
-    if (roll > 0.5 && roll <= 0.85) {
-      type = 'cruise_missile';
-      speed = 24;
-      altitude = 12;
-      name = 'Cruise Missile';
-    } else if (roll > 0.85) {
-      type = 'stealth_bomber';
-      speed = 19;
-      altitude = 22;
-      name = 'Strike Bomber';
-    }
+  public spawnThreatWave(
+    buildings: PlacedBuilding[],
+    onLog: (entry: CombatLogEntry) => void,
+    population = 4500,
+    readiness = 80
+  ) {
+    const wave = this.director.composeNextWave(population, readiness, buildings);
 
     let targetX = 16;
     let targetZ = -8;
@@ -167,37 +161,39 @@ export class ThreatSystem {
       targetBuildingId = targetBuilding.id;
     }
 
-    const threatId = `threat_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-    const originX = targetX - 135 + (Math.random() - 0.5) * 30;
-    const originZ = targetZ - 115 + (Math.random() - 0.5) * 30;
+    for (let c = 0; c < wave.count; c++) {
+      const threatId = `threat_${Date.now()}_${Math.floor(Math.random() * 10000)}_${c}`;
+      const originX = targetX - 135 + (Math.random() - 0.5) * 35;
+      const originZ = targetZ - 115 + (Math.random() - 0.5) * 35;
 
-    const threat: Threat = {
-      id: threatId,
-      name,
-      type,
-      x: originX,
-      y: altitude,
-      z: originZ,
-      targetX,
-      targetZ,
-      targetBuildingId,
-      speed,
-      health: 100,
-      maxHealth: 100,
-      detected: false,
-      state: 'UNDETECTED',
-      altitude,
-      heading: Math.atan2(targetX - originX, targetZ - originZ),
-      interceptorsInFlight: 0,
-    };
+      const threat: Threat = {
+        id: threatId,
+        name: wave.count > 1 ? `${wave.name} #${c + 1}` : wave.name,
+        type: wave.threatType,
+        x: originX,
+        y: wave.altitude,
+        z: originZ,
+        targetX,
+        targetZ,
+        targetBuildingId,
+        speed: wave.speed,
+        health: wave.health,
+        maxHealth: wave.health,
+        detected: false,
+        state: 'UNDETECTED',
+        altitude: wave.altitude,
+        heading: Math.atan2(targetX - originX, targetZ - originZ),
+        interceptorsInFlight: 0,
+      };
 
-    const mesh = this.createThreatMesh(type);
-    mesh.position.set(threat.x, threat.y, threat.z);
-    mesh.rotation.y = threat.heading;
+      const mesh = this.createThreatMesh(wave.threatType);
+      mesh.position.set(threat.x, threat.y, threat.z);
+      mesh.rotation.y = threat.heading;
 
-    this.group.add(mesh);
-    this.threatMeshes.set(threatId, mesh);
-    this.activeThreats.push(threat);
+      this.group.add(mesh);
+      this.threatMeshes.set(threatId, mesh);
+      this.activeThreats.push(threat);
+    }
 
     onLog({
       id: `log_${Date.now()}_${Math.random()}`,

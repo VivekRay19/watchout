@@ -97,7 +97,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ engine, onClose })
             </div>
             <div>
               <h2 className="font-display font-bold text-slate-100 text-base">
-                SYSTEM SETTINGS & ENVIRONMENT (v2.1.0)
+                SYSTEM SETTINGS & ENVIRONMENT (v2.2.0)
               </h2>
               <span className="text-[11px] font-mono text-slate-400">
                 Audio • Graphics Presets • Day/Night • Game Persistence

@@ -667,7 +667,9 @@ export class GameEngine {
               );
             }
           },
-          (logEntry) => this.log(logEntry.type, logEntry.message)
+          (logEntry) => this.log(logEntry.type, logEntry.message),
+          this.economy.state.population,
+          this.economy.state.militaryReadiness
         );
 
         // 9. Offensive Missions

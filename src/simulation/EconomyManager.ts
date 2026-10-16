@@ -1,11 +1,14 @@
 import { PlacedBuilding, EconomyState, TechNode } from '../types/game';
 import { BUILDING_DEFS } from '../data/buildingDefs';
 import { UtilityGrid } from './UtilityGrid';
+import { LoanManager } from './LoanManager';
 
 export class EconomyManager {
   public state: EconomyState;
+  public loanManager: LoanManager;
 
   constructor() {
+    this.loanManager = new LoanManager();
     this.state = {
       treasury: 25680,
       hourlyTax: 3120,
@@ -159,8 +162,12 @@ export class EconomyManager {
     const citizenTax = Math.round(this.state.population * 0.42 * congestionPenalty);
     const commercialTax = Math.round(this.state.jobsFilled * 0.44 * congestionPenalty);
     this.state.hourlyTax = citizenTax + commercialTax;
-    this.state.hourlyExpenses = totalExpenses;
+    const debtService = this.loanManager.getTotalHourlyDebtService();
+    this.state.hourlyExpenses = totalExpenses + debtService;
     this.state.netIncome = this.state.hourlyTax - this.state.hourlyExpenses;
+
+    // Process loan repayment deductions
+    this.loanManager.processRepayments(deltaSeconds, this.state.treasury);
 
     this.state.treasury += (this.state.netIncome * deltaSeconds) / 12;
 

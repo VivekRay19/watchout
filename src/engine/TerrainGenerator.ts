@@ -306,6 +306,71 @@ export class TerrainGenerator {
     return h >= this.waterLevel - 1.2 && h <= this.plateauHeight + 0.5;
   }
 
+  public gradeRoadCorridor(points: { x: number; y: number; z: number }[], roadWidth = 4.2, shoulderWidth = 3.5) {
+    if (!this.mesh || !points || points.length < 2) return;
+    const posAttr = this.mesh.geometry.attributes.position as THREE.BufferAttribute;
+    const vertexCount = posAttr.count;
+    let modified = false;
+
+    const totalInfluenceDist = roadWidth * 0.5 + shoulderWidth;
+    const innerRoadHalf = roadWidth * 0.5;
+
+    for (let i = 0; i < vertexCount; i++) {
+      const vx = posAttr.getX(i);
+      const vy = posAttr.getY(i);
+      const vz = posAttr.getZ(i);
+
+      // Find closest segment in points
+      let minDistSq = Infinity;
+      let targetElevation = vy;
+
+      for (let s = 0; s < points.length - 1; s++) {
+        const p1 = points[s];
+        const p2 = points[s + 1];
+        const segDx = p2.x - p1.x;
+        const segDz = p2.z - p1.z;
+        const segLenSq = segDx * segDx + segDz * segDz;
+        if (segLenSq < 0.0001) continue;
+
+        const t = Math.max(0, Math.min(1, ((vx - p1.x) * segDx + (vz - p1.z) * segDz) / segLenSq));
+        const projX = p1.x + t * segDx;
+        const projZ = p1.z + t * segDz;
+        const distSq = (vx - projX) * (vx - projX) + (vz - projZ) * (vz - projZ);
+
+        if (distSq < minDistSq) {
+          minDistSq = distSq;
+          targetElevation = p1.y + t * (p2.y - p1.y);
+        }
+      }
+
+      const dist = Math.sqrt(minDistSq);
+      if (dist <= totalInfluenceDist) {
+        // Cut or fill elevation
+        let blendFactor = 1.0;
+        if (dist > innerRoadHalf) {
+          // Smooth Hermite shoulder transition to natural terrain
+          const st = (dist - innerRoadHalf) / Math.max(0.1, shoulderWidth);
+          blendFactor = 1.0 - (st * st * (3.0 - 2.0 * st));
+        }
+
+        // Road deck is positioned at targetElevation, so terrain bed is carved to targetElevation - 0.06
+        const roadBedY = targetElevation - 0.06;
+        const newY = vy * (1.0 - blendFactor) + roadBedY * blendFactor;
+
+        // Apply only if meaningful difference to avoid vertex churn
+        if (Math.abs(newY - vy) > 0.01) {
+          posAttr.setY(i, newY);
+          modified = true;
+        }
+      }
+    }
+
+    if (modified) {
+      posAttr.needsUpdate = true;
+      this.mesh.geometry.computeVertexNormals();
+    }
+  }
+
   public update(time: number) {
     if (!this.waterMesh) return;
 

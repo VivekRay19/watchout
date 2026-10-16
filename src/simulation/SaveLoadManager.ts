@@ -1,4 +1,5 @@
 import { PlacedBuilding, EconomyState, TechNode, GameSettings, RoadNode, RoadSegment } from '../types/game';
+import { ActiveLoan } from './LoanManager';
 
 export interface GameSaveData {
   version: string;
@@ -9,9 +10,11 @@ export interface GameSaveData {
   economy: EconomyState;
   techTree: TechNode[];
   settings: GameSettings;
+  loans?: ActiveLoan[];
+  creditScore?: number;
 }
 
-const SAVE_KEY = 'watchout_game_save_v2_1';
+const SAVE_KEY = 'watchout_game_save_v2_2';
 
 export class SaveLoadManager {
   public static save(
@@ -20,11 +23,13 @@ export class SaveLoadManager {
     roadSegments: RoadSegment[],
     economy: EconomyState,
     techTree: TechNode[],
-    settings: GameSettings
+    settings: GameSettings,
+    loans?: ActiveLoan[],
+    creditScore?: number
   ): boolean {
     try {
       const data: GameSaveData = {
-        version: '2.1.0',
+        version: '2.2.0',
         timestamp: Date.now(),
         buildings,
         roadNodes,
@@ -32,6 +37,8 @@ export class SaveLoadManager {
         economy,
         techTree,
         settings,
+        loans,
+        creditScore,
       };
 
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -47,7 +54,7 @@ export class SaveLoadManager {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return null;
       const data = JSON.parse(raw) as GameSaveData;
-      if (!data || data.version !== '2.1.0') return null;
+      if (!data || data.version !== '2.2.0') return null;
       return data;
     } catch (e) {
       console.error('Failed to load game:', e);

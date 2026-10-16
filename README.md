@@ -1,17 +1,18 @@
 # WATCH OUT
-### BUILD. DEFEND. STRIKE. (v2.1.0)
+### BUILD. DEFEND. STRIKE. (v2.2.0)
 
 **WATCH OUT** is a clean, colorful 3D isometric city-builder and territorial defense strategy game. Build connected road networks, pastel residential neighborhoods, commercial plazas, industrial ports, and utilities while safeguarding your city with early-warning radar towers, SAM batteries, and offensive airbase operations.
 
 ---
 
-## What's New in Version 2.1.0
+## What's New in Version 2.2.0
 
-- **Living World & Event-Driven Animation (`AnimationSystem`)**: GPU wind-swaying trees, animated water waves with shoreline foam, moving container cargo ships with wakes, active airbase fighter patrols, rotating radars, rooftop HVAC fans, industrial jib cranes, lighthouse beacon beams, and factory/power-plant smoke/steam tied to real simulation and power states.
-- **Architectural Variation & Staged Construction**: Multiple low-poly building variants across residential, commercial, and industrial categories, spherical refinery domes, multi-hangar tactical airbase with ATC tower, coastal lighthouses, and staged building construction/repair with live progress in the Building Inspector.
-- **Route-Finding Traffic & Intersection Signals**: 6 vehicle categories (sedans, yellow taxis, delivery vans, cargo trucks, buses, military trucks) with spinning wheels, BFS pathfinding across connected roads, safe following distances, and working red/green traffic signals at multi-way intersections.
-- **Smooth Day/Night Cycle & Economic Depth**: Continuous Sunrise, Day, Sunset, and Night lighting transitions plus Residential/Commercial/Industrial zone demand, pollution, and traffic congestion modeling.
-- **Refined Interface**: Top-left Getting Started card with expandable tips, interactive top-right Minimap with click-to-pan, and a 7-category bottom construction toolbar (`Roads`, `Residential`, `Commercial`, `Industrial`, `Infrastructure`, `Defense`, `Military`).
+- **Spline Road Corridors & Cut-and-Fill Grading**: Automatic terrain grading cuts and fills the earth directly beneath road splines, providing flat graded roadbeds with smooth Hermite shoulders that prevent road surfaces from clipping through sloped hills. Includes 25% max-grade detection and auto-bridge conversion.
+- **First Sovereign Bank of Metropolis (`BankingModal`)**: 3 fictional municipal loan tiers (*Short-Term Commercial Line of Credit*, *Municipal Infrastructure Bond*, and *National Strategic Defense Syndicate Loan*) with amortized debt service deductions, credit scores (300-850), and 0% penalty early repayment.
+- **Layered Multi-Channel Air Defense**: Patriot SAM batteries now maintain up to 4 concurrent tracking channels (`assignedTargetIds`), allowing defense sites to lock and engage multiple incoming threats simultaneously.
+- **Arcade Flight Physics & 9-Stage Flight Model**: Interceptor, Multirole, and Stealth fighter classes with climb pitch, bank-to-turn roll, and strict 9-stage lifecycle (`PARKED` → `TAXIING` → `TAKEOFF` → `CLIMB` → `EN_ROUTE` → `ENGAGING` → `RETURNING` → `APPROACH` → `LANDING`).
+- **Dynamic Threat Difficulty Director**: Adaptive threat scaling based on population, GDP, and defensive readiness.
+- **Automated Verification Suite**: Built-in test suite for flight states, banking amortization, defense channels, and difficulty progression.
 
 ---
 

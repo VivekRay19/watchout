@@ -102,6 +102,8 @@ export interface PlacedBuilding {
   isReloading?: boolean;
   reloadProgress?: number;
   assignedTargetId?: string;
+  assignedTargetIds?: string[];
+  trackingChannels?: number;
   defenseStatus?: 'IDLE' | 'TRACKING' | 'FIRING' | 'RELOADING' | 'UNPOWERED' | 'DEPLETED';
 }
 

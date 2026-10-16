@@ -204,6 +204,24 @@ export class RoadSystem {
   ): RoadSegment | null {
     if (startNode.id === endNode.id) return null;
 
+    const dx = endNode.x - startNode.x;
+    const dz = endNode.z - startNode.z;
+    const hDist = Math.max(0.1, Math.hypot(dx, dz));
+    const dy = Math.abs(endNode.elevation - startNode.elevation);
+    const slopeGrade = dy / hDist;
+
+    // If slope exceeds 25% (0.25) or crosses water, promote to bridge for structural safety
+    const midX = (startNode.x + endNode.x) / 2;
+    const midZ = (startNode.z + endNode.z) / 2;
+    const crossesWater =
+      this.terrain.isWater(midX, midZ) ||
+      this.terrain.isWater(startNode.x, startNode.z) ||
+      this.terrain.isWater(endNode.x, endNode.z);
+
+    if ((slopeGrade > 0.25 || crossesWater) && type !== 'road_bridge') {
+      type = 'road_bridge';
+    }
+
     const crossings: { segId: string; x: number; z: number; distFromStart: number }[] = [];
 
     this.segments.forEach((seg) => {
@@ -314,6 +332,14 @@ export class RoadSystem {
     if (!startNode.connectedTo.includes(endNode.id)) startNode.connectedTo.push(endNode.id);
     if (!endNode.connectedTo.includes(startNode.id)) endNode.connectedTo.push(startNode.id);
     this.segments.set(segmentId, segment);
+
+    // Apply terrain cut-and-fill grading along the road corridor for non-bridges
+    if (type !== 'road_bridge') {
+      const p1 = { x: startNode.x, y: startNode.elevation, z: startNode.z };
+      const p2 = { x: endNode.x, y: endNode.elevation, z: endNode.z };
+      const rWidth = type === 'road_highway' ? 4.8 : 3.8;
+      this.terrain.gradeRoadCorridor([p1, p2], rWidth, 3.2);
+    }
 
     this.renderSegment(segment, startNode, endNode);
     return segment;

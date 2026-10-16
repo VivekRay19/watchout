@@ -8,6 +8,7 @@ import { BuildingInspector } from './ui/BuildingInspector';
 import { MilitaryPanel } from './ui/MilitaryPanel';
 import { ResearchModal } from './ui/ResearchModal';
 import { SettingsModal } from './ui/SettingsModal';
+import { BankingModal } from './ui/BankingModal';
 import { TutorialCard } from './ui/TutorialCard';
 import { Minimap } from './ui/Minimap';
 
@@ -22,6 +23,7 @@ export const App: React.FC = () => {
   const [showResearch, setShowResearch] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCombatLog, setShowCombatLog] = useState(false);
+  const [showBanking, setShowBanking] = useState(false);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -58,6 +60,7 @@ export const App: React.FC = () => {
             onOpenResearch={() => setShowResearch(true)}
             onOpenMilitary={() => setShowMilitary(true)}
             onOpenSettings={() => setShowSettings(true)}
+            onOpenBanking={() => setShowBanking(true)}
           />
 
           {/* Compact Top-Right Minimap */}
@@ -109,6 +112,11 @@ export const App: React.FC = () => {
           {/* Settings Modal (Hidden until needed) */}
           {showSettings && (
             <SettingsModal engine={engine} onClose={() => setShowSettings(false)} />
+          )}
+
+          {/* Municipal Banking Modal (Hidden until needed) */}
+          {showBanking && (
+            <BankingModal engine={engine} onClose={() => setShowBanking(false)} />
           )}
         </>
       )}

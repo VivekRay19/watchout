@@ -19,11 +19,13 @@ interface TopHUDProps {
   onOpenResearch: () => void;
   onOpenMilitary: () => void;
   onOpenSettings: () => void;
+  onOpenBanking: () => void;
 }
 
 export const TopHUD: React.FC<TopHUDProps> = ({
   engine,
   onOpenSettings,
+  onOpenBanking,
 }) => {
   const [showStatsPopover, setShowStatsPopover] = useState(false);
   const eco = engine.economy.state;
@@ -187,8 +189,20 @@ export const TopHUD: React.FC<TopHUDProps> = ({
         </div>
       </div>
 
-      {/* Right: Compact Settings Button */}
+      {/* Right: Compact Banking & Settings Button */}
       <div className="flex items-center gap-2 pointer-events-auto">
+        <button
+          onClick={() => {
+            soundManager.playClick();
+            onOpenBanking();
+          }}
+          className="bg-[#101c2e]/90 backdrop-blur-md hover:bg-[#192b44] text-emerald-400 hover:text-white px-3 py-2 rounded-xl border border-white/10 shadow-xl transition-colors flex items-center gap-1.5 text-xs font-bold"
+          title="Municipal Bank & Loans"
+        >
+          <span className="w-5 h-5 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs">$</span>
+          <span>Loans</span>
+        </button>
+
         <button
           onClick={() => {
             soundManager.playClick();
